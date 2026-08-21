@@ -38,16 +38,20 @@ class UserProfileResponse(BaseModel):
     target_exam_year: Optional[int] = None
     daily_question_goal: int = 10
 
+from app.services.email_service import EmailService
+
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(req: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    client_ip = request.client.host if request.client else "unknown"
-    rate_limiter.check_rate_limit(f"register:{client_ip}", max_requests=10, window_seconds=60)
+    client_ip = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For") or (request.client.host if request.client else "unknown")
+    if "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+    rate_limiter.check_rate_limit(f"register:{client_ip}", max_requests=60, window_seconds=60)
 
     # Check if email exists
     stmt = select(User).where(User.email == req.email.lower().strip())
     existing = (await db.execute(stmt)).scalars().first()
     if existing:
-        raise ConflictError("An account with this email address already exists.")
+        raise ConflictError("An account with this email address already exists. Please sign in with your password.")
 
     user = User(
         email=req.email.lower().strip(),
@@ -67,6 +71,13 @@ async def register(req: RegisterRequest, request: Request, db: AsyncSession = De
     db.add(profile)
     await db.commit()
 
+    # Trigger automated welcome email to student
+    await EmailService.send_welcome_email(
+        to_email=user.email,
+        full_name=profile.full_name,
+        target_year=req.target_exam_year or 2026
+    )
+
     token = create_access_token({
         "sub": user.id,
         "email": user.email,
@@ -83,8 +94,10 @@ async def register(req: RegisterRequest, request: Request, db: AsyncSession = De
 
 @router.post("/login", response_model=TokenResponse)
 async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    client_ip = request.client.host if request.client else "unknown"
-    rate_limiter.check_rate_limit(f"login:{client_ip}", max_requests=15, window_seconds=60)
+    client_ip = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For") or (request.client.host if request.client else "unknown")
+    if "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+    rate_limiter.check_rate_limit(f"login:{client_ip}", max_requests=60, window_seconds=60)
 
     stmt = select(User).where(User.email == req.email.lower().strip())
     user = (await db.execute(stmt)).scalars().first()
