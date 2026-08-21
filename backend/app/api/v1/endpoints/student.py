@@ -273,7 +273,7 @@ async def start_similar_question_test(
         user_id=current_user.id,
         mode="TOPIC_TEST",
         topic_id=topic_id,
-        question_count=1
+        question_count=10
     )
     return {
         "session_id": test_session.id,

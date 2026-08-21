@@ -24,5 +24,6 @@ api_router.include_router(student.router, prefix="/student", tags=["Student Inte
 api_router.include_router(student.router, prefix="", tags=["Dashboard Root"])
 api_router.include_router(admin.router, prefix="/admin", tags=["Admin & Review Queue"])
 api_router.include_router(reports.router, prefix="/reports", tags=["Question Reports"])
+api_router.include_router(reports.router, prefix="/governance", tags=["Question Reports (Governance Alias)"])
 api_router.include_router(governance.router, prefix="/admin/governance", tags=["Content Governance & Quality"])
 api_router.include_router(ai_intelligence.router, prefix="/admin/ai", tags=["AI Question Intelligence"])

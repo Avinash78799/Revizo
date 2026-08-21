@@ -13,12 +13,15 @@ router = APIRouter()
 
 class CreateReportRequest(BaseModel):
     question_id: str
-    reason: str = Field(..., description="'incorrect_answer', 'ambiguous', 'outdated', 'typo', 'poor_explanation', 'other'")
+    reason: Optional[str] = None
+    report_type: Optional[str] = None
+    severity: Optional[str] = "normal"
     comment: Optional[str] = None
     is_serious_medical_error: bool = False
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 @router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("/report", status_code=status.HTTP_201_CREATED)
 async def report_question(
     req: CreateReportRequest,
     current_user: User = Depends(get_current_user),
@@ -26,8 +29,11 @@ async def report_question(
 ):
     """
     Submits a student report on a question.
-    If flagged as a serious medical error, automatically quarantines the question.
+    If flagged as a serious medical error or critical severity, automatically quarantines the question.
     """
+    effective_reason = req.reason or req.report_type or "OTHER"
+    is_critical = req.is_serious_medical_error or (req.severity == "critical")
+
     stmt = select(Question).where(Question.id == req.question_id)
     result = await db.execute(stmt)
     question = result.scalars().first()
@@ -38,9 +44,9 @@ async def report_question(
     report = QuestionReport(
         question_id=question.id,
         user_id=current_user.id,
-        reason=req.reason,
+        reason=effective_reason,
         comment=req.comment,
-        is_serious_medical_error=req.is_serious_medical_error
+        is_serious_medical_error=is_critical
     )
     db.add(report)
 
