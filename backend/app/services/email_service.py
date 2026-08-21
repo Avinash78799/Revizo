@@ -11,7 +11,7 @@ logger = logging.getLogger("revizo.email")
 class EmailService:
     """
     Transactional email delivery service for Revizo.
-    Sends automated welcome emails, password reset links, and revision notices.
+    Sends automated welcome emails, password reset OTPs, and revision notices.
     Falls back gracefully to async log recording if SMTP is unconfigured in development.
     """
 
@@ -84,15 +84,67 @@ class EmailService:
 </html>"""
 
     @classmethod
+    def generate_password_reset_otp_html(cls, email: str, otp_code: str) -> str:
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Password Reset OTP</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #0f172a; margin: 0; padding: 0; }}
+    .container {{ max-width: 540px; margin: 30px auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
+    .header {{ background: #0f172a; padding: 28px; text-align: center; }}
+    .logo {{ color: #ffffff; font-size: 24px; font-weight: 900; letter-spacing: -0.5px; margin: 0; }}
+    .subtitle {{ color: #38bdf8; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; margin-top: 4px; }}
+    .content {{ padding: 32px 28px; text-align: center; }}
+    h1 {{ font-size: 18px; font-weight: 800; color: #0f172a; margin-top: 0; }}
+    p {{ font-size: 13px; line-height: 1.6; color: #475569; margin: 12px 0; }}
+    .otp-box {{ background: #f0fdf4; border: 2px dashed #16a34a; border-radius: 12px; padding: 18px; margin: 24px auto; max-width: 280px; letter-spacing: 8px; font-size: 32px; font-weight: 900; color: #15803d; }}
+    .expiry-note {{ font-size: 11px; color: #64748b; margin-top: 8px; }}
+    .warning {{ background: #fef2f2; border: 1px solid #fee2e2; border-radius: 10px; padding: 12px; font-size: 11px; color: #991b1b; margin-top: 20px; text-align: left; }}
+    .footer {{ background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px; font-size: 11px; color: #94a3b8; text-align: center; }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">REVIZO</div>
+      <div class="subtitle">Secure Account Verification</div>
+    </div>
+    <div class="content">
+      <h1>Password Reset Verification</h1>
+      <p>We received a request to reset the password for your Revizo account (<strong>{email}</strong>). Use the verification code below to complete the reset process:</p>
+      
+      <div class="otp-box">{otp_code}</div>
+      <div class="expiry-note">⏳ Code is valid for <strong>10 minutes</strong>.</div>
+
+      <div class="warning">
+        🛡️ <strong>Security Notice:</strong> If you did not initiate this request, you can safely disregard this email. Your password will remain unchanged.
+      </div>
+    </div>
+    <div class="footer">
+      &copy; Revizo Medical Education &bull; Confidential & Automated Transactional Message
+    </div>
+  </div>
+</body>
+</html>"""
+
+    @classmethod
     async def send_welcome_email(cls, to_email: str, full_name: Optional[str] = None, target_year: int = 2026):
-        """
-        Sends an automated welcome email asynchronously in the background.
-        """
         html_body = cls.generate_welcome_email_html(full_name, to_email, target_year)
         plain_body = f"Welcome to Revizo, Dr. {full_name or 'Doctor'}!\n\nYour account has been created for NEET-PG {target_year}.\nStart your practice at https://news-modem-tropical-sharing.trycloudflare.com/dashboard"
         subject = f"Welcome to Revizo — Your NEET-PG {target_year} Preparation Starts Here"
+        asyncio.create_task(cls._send_email_async(to_email, subject, html_body, plain_body))
 
-        # Run delivery in background thread so HTTP response is instant
+    @classmethod
+    async def send_password_reset_otp(cls, to_email: str, otp_code: str):
+        """
+        Sends an automated 6-digit OTP verification email for password reset.
+        """
+        html_body = cls.generate_password_reset_otp_html(to_email, otp_code)
+        plain_body = f"Your Revizo password reset OTP is: {otp_code}\n\nThis code expires in 10 minutes. If you did not request a password reset, please ignore this email."
+        subject = f"{otp_code} is your Revizo password reset verification code"
         asyncio.create_task(cls._send_email_async(to_email, subject, html_body, plain_body))
 
     @classmethod
@@ -116,6 +168,6 @@ class EmailService:
                 await asyncio.to_thread(_deliver)
                 logger.info(f"[EMAIL DELIVERED] Live email sent to {to_email} via {cls.SMTP_HOST}")
             else:
-                logger.info(f"[EMAIL SIMULATION] Welcome email generated for {to_email} with subject: '{subject}'.")
+                logger.info(f"[EMAIL SIMULATION] Email generated for {to_email} with subject: '{subject}'.")
         except Exception as e:
             logger.error(f"[EMAIL ERROR] Failed to send email to {to_email}: {e}")

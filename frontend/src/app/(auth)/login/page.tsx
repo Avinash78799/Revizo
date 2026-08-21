@@ -148,6 +148,12 @@ function LoginForm() {
             />
             <span>Remember my email</span>
           </label>
+          <Link
+            href={`/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`}
+            className="font-semibold text-brand-600 hover:text-brand-700"
+          >
+            Forgot password?
+          </Link>
         </div>
 
         <button

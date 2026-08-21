@@ -142,3 +142,72 @@ async def logout(current_user: User = Depends(get_current_user)):
     Stateless JWT client logout acknowledgment.
     """
     return {"status": "logged_out", "message": "Session terminated successfully."}
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordOtpRequest(BaseModel):
+    email: EmailStr
+    otp: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=8)
+
+from app.services.password_reset_service import PasswordResetService
+
+@router.post("/forgot-password", status_code=status.HTTP_200_OK)
+async def forgot_password(req: ForgotPasswordRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Generates a 6-digit OTP and sends it to the user's email address.
+    """
+    client_ip = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For") or (request.client.host if request.client else "unknown")
+    if "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+    rate_limiter.check_rate_limit(f"forgot_password:{client_ip}", max_requests=10, window_seconds=60)
+
+    clean_email = req.email.lower().strip()
+    stmt = select(User).where(User.email == clean_email)
+    user = (await db.execute(stmt)).scalars().first()
+
+    # Generate OTP
+    otp = await PasswordResetService.generate_otp(clean_email)
+
+    # Deliver OTP via Email
+    if user and user.is_active:
+        await EmailService.send_password_reset_otp(to_email=clean_email, otp_code=otp)
+
+    return {
+        "status": "otp_sent",
+        "email": clean_email,
+        "message": f"If an account exists for {clean_email}, a 6-digit verification code has been dispatched to your email."
+    }
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK)
+@router.post("/reset-password-otp", status_code=status.HTTP_200_OK)
+async def reset_password(req: ResetPasswordOtpRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Verifies 6-digit OTP and updates the account password.
+    """
+    client_ip = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For") or (request.client.host if request.client else "unknown")
+    if "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+    rate_limiter.check_rate_limit(f"reset_password:{client_ip}", max_requests=15, window_seconds=60)
+
+    clean_email = req.email.lower().strip()
+
+    # Verify OTP
+    is_valid_otp = await PasswordResetService.verify_and_consume_otp(clean_email, req.otp)
+    if not is_valid_otp:
+        raise AuthenticationError("Invalid or expired 6-digit verification code. Please request a new code.")
+
+    stmt = select(User).where(User.email == clean_email)
+    user = (await db.execute(stmt)).scalars().first()
+    if not user:
+        raise NotFoundError("Account not found.")
+
+    # Update password
+    user.hashed_password = get_password_hash(req.new_password)
+    await db.commit()
+
+    return {
+        "status": "success",
+        "message": "Password updated successfully. You can now sign in with your new password."
+    }
