@@ -90,10 +90,9 @@ class TestService:
         subject_id: Optional[str] = None,
         chapter_id: Optional[str] = None,
         topic_id: Optional[str] = None,
-        question_count: int = 5,
+        question_count: int = 10,
         integrity_mode: str = "WARNING_MODE",
-        blueprint_config: Optional[dict] = None,
-        allow_dev_seeds: bool = True
+        blueprint_config: Optional[dict] = None
     ) -> Tuple[TestSession, List[Question]]:
         """
         Creates a locked, blueprint-validated test session with test reproducibility snapshot.

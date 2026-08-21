@@ -161,10 +161,10 @@ export default function PracticePage() {
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { min: 5, q: 5, title: '5-Min Micro Sprint', desc: '5 High-Yield MCQs' },
-            { min: 10, q: 10, title: '10-Min Power Drill', desc: '10 Targeted Concepts' },
-            { min: 15, q: 15, title: '15-Min Focused Block', desc: '15 Mixed Clinicals' },
-            { min: 30, q: 25, title: '30-Min Mini Mock', desc: '25 High-Yield Questions' },
+            { min: 10, q: 10, title: '10-Min Power Drill', desc: '10 Targeted MCQs' },
+            { min: 15, q: 15, title: '15-Min Focused Block', desc: '15 High-Yield Concepts' },
+            { min: 20, q: 20, title: '20-Min Clinical Sprint', desc: '20 Mixed Clinicals' },
+            { min: 30, q: 30, title: '30-Min Mini Mock', desc: '30 Comprehensive Questions' },
           ].map((item) => (
             <button
               key={item.min}
@@ -292,7 +292,7 @@ export default function PracticePage() {
           <div className="flex items-center gap-3">
             <span className="text-xs font-bold text-slate-700">Question Count:</span>
             <div className="flex gap-1.5">
-              {[5, 10, 20, 30].map((num) => (
+              {[10, 15, 20, 25, 30].map((num) => (
                 <button
                   key={num}
                   type="button"

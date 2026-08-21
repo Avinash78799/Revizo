@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/Skeleton';
 export default function SubjectDetailPage({ params }: { params: { id: string } }) {
   const [subject, setSubject] = useState<SubjectTree | null>(null);
   const [loading, setLoading] = useState(true);
-  const [questionCount, setQuestionCount] = useState<number>(10);
+  const [questionCount, setQuestionCount] = useState<number>(15);
   const [startingTest, setStartingTest] = useState(false);
   const router = useRouter();
 
@@ -77,7 +77,7 @@ export default function SubjectDetailPage({ params }: { params: { id: string } }
         {/* Question Count Selector */}
         <div className="flex items-center gap-2 rounded-xl bg-slate-100 p-1.5 border border-slate-200">
           <span className="text-xs font-bold text-slate-700 pl-2">Questions:</span>
-          {[5, 10, 20, 30].map((num) => (
+          {[10, 15, 20, 25, 30].map((num) => (
             <button
               key={num}
               type="button"

@@ -64,7 +64,7 @@ async def test_chapter_and_topic_test_isolation_and_selection(client_and_db):
             user_id="aspirant-user-id",
             mode="CHAPTER_REVISION_TEST",
             chapter_id=chap.id,
-            question_count=2
+            question_count=10
         )
         assert chap_session.status == "IN_PROGRESS"
         assert len(chap_qs) >= 1
@@ -77,7 +77,7 @@ async def test_chapter_and_topic_test_isolation_and_selection(client_and_db):
             user_id="aspirant-user-id",
             mode="TOPIC_TEST",
             topic_id=top.id,
-            question_count=2
+            question_count=10
         )
         assert top_session.status == "IN_PROGRESS"
         for q in top_qs:
@@ -98,7 +98,7 @@ async def test_insufficient_content_blueprint_failure_handling(client_and_db):
                 user_id="aspirant-user-id",
                 mode="TOPIC_TEST",
                 topic_id="non-existent-topic-id-9999",
-                question_count=5
+                question_count=10
             )
         assert "INSUFFICIENT_CONTENT" in str(exc_info.value)
 
@@ -127,7 +127,7 @@ async def test_answer_sanitization_and_pyq_provenance_labels(client_and_db):
             assert "why_wrong_explanation" not in opt
 
         # Provenance check
-        assert formatted["provenance_tag"] in ("DEVELOPMENT_SEED", "VERIFIED_PYQ", "SOURCE_REFERENCED", "PYQ_STYLE", "ORIGINAL_AI_GENERATED")
+        assert formatted["provenance_tag"] in ("DEVELOPMENT_SEED", "VERIFIED_PYQ", "SOURCE_REFERENCED", "PYQ_STYLE", "ORIGINAL_AI_GENERATED", "VERIFIED_CORE_QUESTION")
 
 @pytest.mark.asyncio
 async def test_server_authoritative_timer_and_expiration_rejection(client_and_db):
@@ -142,7 +142,7 @@ async def test_server_authoritative_timer_and_expiration_rejection(client_and_db
             db=session,
             user_id=user_id,
             mode="DAILY_SHORT_TEST",
-            question_count=1
+            question_count=10
         )
         q = qs[0]
 
@@ -177,7 +177,7 @@ async def test_integrity_events_and_strict_mode_penalty(client_and_db):
             db=session,
             user_id=user_id,
             mode="WEEKLY_GRAND_TEST",
-            question_count=1,
+            question_count=10,
             integrity_mode="STRICT_MODE"
         )
         assert test_session.integrity_score == 100
@@ -222,7 +222,7 @@ async def test_question_by_question_review_and_concise_explanations(client_and_d
             db=session,
             user_id=user_id,
             mode="DAILY_SHORT_TEST",
-            question_count=2
+            question_count=10
         )
         q1, q2 = qs[0], qs[1]
 
@@ -278,7 +278,7 @@ async def test_anti_repeat_question_history(client_and_db):
             db=session,
             user_id=user_id,
             mode="DAILY_SHORT_TEST",
-            question_count=1
+            question_count=10
         )
         q = qs[0]
 
@@ -312,20 +312,20 @@ async def test_six_simulated_student_profiles(client_and_db):
 
     async with session_maker() as session:
         # Profile A: Strong Student (Consistent 100% correct + definitely know)
-        test_a, qs_a = await TestService.create_test_session(session, "student-sim-a", "DAILY_SHORT_TEST", question_count=1)
+        test_a, qs_a = await TestService.create_test_session(session, "student-sim-a", "DAILY_SHORT_TEST", question_count=10)
         res_a = await TestService.submit_answer_idempotent(session, test_a.id, "student-sim-a", qs_a[0].id, "B", "DEFINITELY_KNOW")
         assert res_a["is_correct"] is True
         assert res_a["learning_engine_feedback"]["ease_factor"] >= 2.50
 
         # Profile C: Overconfident (Incorrect + definitely know)
-        test_c, qs_c = await TestService.create_test_session(session, "student-sim-c", "DAILY_SHORT_TEST", question_count=1)
+        test_c, qs_c = await TestService.create_test_session(session, "student-sim-c", "DAILY_SHORT_TEST", question_count=10)
         res_c = await TestService.submit_answer_idempotent(session, test_c.id, "student-sim-c", qs_c[0].id, "A", "DEFINITELY_KNOW")
         assert res_c["is_correct"] is False
         assert res_c["learning_engine_feedback"]["misconception_state"] == "SUSPECTED_MISCONCEPTION"
         assert res_c["learning_engine_feedback"]["ease_factor"] <= 2.20
 
         # Profile D: Underconfident (Correct + guessing)
-        test_d, qs_d = await TestService.create_test_session(session, "student-sim-d", "DAILY_SHORT_TEST", question_count=1)
+        test_d, qs_d = await TestService.create_test_session(session, "student-sim-d", "DAILY_SHORT_TEST", question_count=10)
         res_d = await TestService.submit_answer_idempotent(session, test_d.id, "student-sim-d", qs_d[0].id, "B", "GUESSING")
         assert res_d["is_correct"] is True
         assert res_d["learning_engine_feedback"]["revision_interval_days"] == 1  # Spacing expansion suppressed

@@ -56,7 +56,7 @@ async def test_integrity_severity_model_and_zero_network_penalty(client_and_db):
     async with session_maker() as session:
         user_id = "test-sev-user"
         test_session, _ = await TestService.create_test_session(
-            db=session, user_id=user_id, mode="WEEKLY_GRAND_TEST", question_count=1, integrity_mode="STRICT_MODE"
+            db=session, user_id=user_id, mode="WEEKLY_GRAND_TEST", question_count=10, integrity_mode="STRICT_MODE"
         )
         assert test_session.integrity_score == 100
 
@@ -92,7 +92,7 @@ async def test_integrity_does_not_alter_academic_score(client_and_db):
     async with session_maker() as session:
         user_id = "test-decoupled-student"
         test_session, qs = await TestService.create_test_session(
-            db=session, user_id=user_id, mode="DAILY_SHORT_TEST", question_count=1, integrity_mode="WARNING_MODE"
+            db=session, user_id=user_id, mode="DAILY_SHORT_TEST", question_count=10, integrity_mode="WARNING_MODE"
         )
         q = qs[0]
 
@@ -153,9 +153,9 @@ async def test_m6_revision_overrides_anti_repeat_policy(client_and_db):
             db=session,
             user_id=user_id,
             mode="DANGER_ZONE_RETEST",
-            question_count=1
+            question_count=10
         )
-        assert len(selected_qs) == 1
+        assert len(selected_qs) >= 1
         assert override_reason == "M6_DANGER_ZONE_OVERRIDE"
 
 @pytest.mark.asyncio
@@ -173,7 +173,7 @@ async def test_weekly_grand_test_reproducibility_and_ranking_safeguards(client_a
             db=session,
             user_id=user_id,
             mode="WEEKLY_GRAND_TEST",
-            question_count=2
+            question_count=10
         )
         await session.commit()
 
@@ -182,8 +182,8 @@ async def test_weekly_grand_test_reproducibility_and_ranking_safeguards(client_a
         assert snap["blueprint_version"] == "gt-blueprint-v1.0"
         assert snap["selection_strategy_version"] == "selection-v1.0"
         assert snap["algorithm_version"] == "adaptive-v1.0"
-        assert len(snap["question_ids"]) == 2
-        assert len(snap["question_versions"]) == 2
+        assert len(snap["question_ids"]) == 10
+        assert len(snap["question_versions"]) == 10
 
         # Complete test and verify ranking output
         res = await TestService.complete_test_session(session, test_session.id, user_id)
@@ -201,7 +201,7 @@ async def test_offline_client_cannot_extend_server_authoritative_timer(client_an
     async with session_maker() as session:
         user_id = "test-clock-student"
         test_session, qs = await TestService.create_test_session(
-            db=session, user_id=user_id, mode="DAILY_SHORT_TEST", question_count=1
+            db=session, user_id=user_id, mode="DAILY_SHORT_TEST", question_count=10
         )
         q = qs[0]
 

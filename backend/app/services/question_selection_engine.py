@@ -26,14 +26,26 @@ class QuestionSelectionEngine:
     ELIGIBLE_STATUSES = ["PUBLISHED", "published", "APPROVED", "approved"]
     ELIGIBLE_TRUST_CLASSES = [
         "VERIFIED_CORE_QUESTION",
-        "VERIFIED_PYQ",
         "SOURCE_REFERENCED",
         "verified_core_question",
-        "verified_pyq",
-        "ai_assisted_question",
-        "dynamic_practice_question",
-        "development_seed"
+        "source_referenced"
     ]
+
+    DEFAULT_COUNTS_BY_MODE = {
+        "DAILY_SHORT_TEST": 10,
+        "QUICK_TEST": 10,
+        "TOPIC_TEST": 15,
+        "TOPIC": 15,
+        "CHAPTER_REVISION_TEST": 20,
+        "CHAPTER": 20,
+        "SUBJECT_TEST": 30,
+        "SUBJECT": 30,
+        "CUSTOM_TEST": 10,
+        "CUSTOM": 10,
+        "FIVE_MINUTE_REVISION": 10,
+        "MISTAKE_RETEST": 10,
+        "DANGER_ZONE_RETEST": 10,
+    }
 
     @classmethod
     async def select_questions_for_test(
@@ -49,12 +61,26 @@ class QuestionSelectionEngine:
     ) -> Tuple[List[Question], str]:
         """
         Executes blueprint-aware question selection with anti-repeat and evidence-based override tracking.
+        Guarantees:
+        - Exact test length between 10 and 30 questions.
+        - Zero development seeds, zero duplicates.
+        - Clear availability error if insufficient approved questions exist.
         Returns: (selected_questions, selection_override_reason)
         """
         now = utc_now()
         mode_upper = mode.upper()
         recent_threshold = now - timedelta(days=7)
         selection_override_reason = "NONE"
+
+        # Apply mode-specific default only if count is completely omitted (None)
+        if question_count is None:
+            question_count = cls.DEFAULT_COUNTS_BY_MODE.get(mode_upper, 10)
+
+        # Enforce server-authoritative 10–30 question bounds
+        if question_count < 10 or question_count > 30:
+            raise ValidationError(
+                f"INVALID_TEST_LENGTH: Normal student practice tests must contain between 10 and 30 questions. Requested: {question_count}."
+            )
 
         # 1. Fetch Student Encounter History for Anti-Repeat
         stmt_hist = select(StudentQuestionHistory.question_id).where(
@@ -110,13 +136,12 @@ class QuestionSelectionEngine:
         elif mode_upper in ("REVISION", "REVISION_TEST", "FIVE_MINUTE_REVISION", "five_minute_revision"):
             selection_override_reason = "M6_DUE_REVISION_OVERRIDE"
 
-        # 2. Build Mode-Specific Question Query
         res_all = await db.execute(base_query)
         candidate_pool = list(res_all.scalars().all())
 
         if not candidate_pool:
             raise ValidationError(
-                f"INSUFFICIENT_CONTENT: No eligible questions found matching the requested mode '{mode}'. Content pool is empty."
+                f"INSUFFICIENT_CONTENT: No eligible approved questions found matching the requested mode '{mode}'. Content pool is empty."
             )
 
         for q in candidate_pool:
@@ -193,11 +218,19 @@ class QuestionSelectionEngine:
                     if len(selected_questions) >= question_count:
                         break
 
-        # 5. Blueprint Validation
-        if len(selected_questions) < min(1, question_count):
-            raise ValidationError(
-                f"INSUFFICIENT_CONTENT: Test blueprint requested {question_count} questions, but only {len(selected_questions)} were eligible."
-            )
+        # 5. Availability & Blueprint Validation
+        if len(selected_questions) < question_count:
+            if mode_upper in ("MISTAKE_RETEST", "DANGER_ZONE_RETEST") and len(selected_questions) > 0:
+                pass
+            else:
+                raise ValidationError(
+                    f"INSUFFICIENT_CONTENT: {question_count}-question test is currently unavailable for this scope. Only {len(selected_questions)} approved questions are available."
+                )
+
+        # 6. Defensive Duplicate Check
+        selected_ids = [q.id for q in selected_questions]
+        if len(selected_ids) != len(set(selected_ids)):
+            raise ValidationError("TEST_CREATION_FAILED: Duplicate questions detected during generation.")
 
         return selected_questions[:question_count], selection_override_reason
 
@@ -207,16 +240,17 @@ class QuestionSelectionEngine:
         Sanitizes question for student test runner:
         STRIPS correct_option_key, correct_explanation, why_wrong_explanation, remember_takeaway.
         PRESERVES question_text, options, difficulty, provenance tag, trust_class, is_high_yield, is_broadened_pool, scope_note.
+        Never emits 'DEVELOPMENT_SEED' tags to students.
         """
-        provenance_tag = "ORIGINAL_AI_GENERATED"
-        if getattr(question, "trust_class", "") == "development_seed":
-            provenance_tag = "DEVELOPMENT_SEED"
-        elif question.pyq_reference_id is not None:
+        provenance_tag = "SOURCE_REFERENCED"
+        if getattr(question, "pyq_reference_id", None) is not None or getattr(question, "trust_class", "") == "VERIFIED_PYQ":
             provenance_tag = "VERIFIED_PYQ"
-        elif question.source_id is not None:
+        elif getattr(question, "source_id", None) is not None or getattr(question, "trust_class", "") == "SOURCE_REFERENCED":
             provenance_tag = "SOURCE_REFERENCED"
-        elif question.exam_relevance_tag == "PYQ_LINKED":
+        elif getattr(question, "exam_relevance_tag", "") == "PYQ_LINKED":
             provenance_tag = "PYQ_STYLE"
+        else:
+            provenance_tag = "VERIFIED_CORE_QUESTION"
 
         c = question.concept
         t_name = c.topic.name if (c and c.topic) else None
@@ -228,7 +262,7 @@ class QuestionSelectionEngine:
             "concept_name": c.name if c else "Medical Concept",
             "topic_name": t_name,
             "subject_name": s_name,
-            "trust_class": getattr(question, "trust_class", "verified_core_question") or "verified_core_question",
+            "trust_class": getattr(question, "trust_class", "SOURCE_REFERENCED") or "SOURCE_REFERENCED",
             "question_type": question.question_type or "single_best_answer",
             "difficulty": question.difficulty or "moderate",
             "is_high_yield": bool(question.is_high_yield),

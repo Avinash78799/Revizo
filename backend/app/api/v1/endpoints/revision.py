@@ -63,8 +63,7 @@ async def start_five_minute_revision_session(
         db=db,
         user_id=current_user.id,
         mode="five_minute_revision",
-        question_count=5,
-        allow_dev_seeds=True
+        question_count=10
     )
     await db.commit()
 

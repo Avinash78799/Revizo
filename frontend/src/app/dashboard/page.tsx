@@ -44,7 +44,7 @@ export default function DashboardPage() {
     try {
       const session = await apiRequest<TestSession>('/tests/start', {
         method: 'POST',
-        body: JSON.stringify({ mode: 'quick_test', question_count: 5 }),
+        body: JSON.stringify({ mode: 'quick_test', question_count: 10 }),
       });
       router.push(`/test/${session.session_id}`);
     } catch (err: any) {
