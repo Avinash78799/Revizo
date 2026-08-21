@@ -344,7 +344,7 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
                   setInstantEvaluation(null);
                   setCurrentStartTime(Date.now());
                 }}
-                className={`flex h-9 w-9 items-center justify-center rounded-xl border text-xs transition-all ${btnStyle}`}
+                className={`flex h-11 w-11 sm:h-10 sm:w-10 min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border text-xs sm:text-sm font-bold transition-all ${btnStyle}`}
               >
                 {idx + 1}
               </button>

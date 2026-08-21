@@ -1,14 +1,22 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/lib/auth-context';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import MobileNav from '@/components/MobileNav';
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#0284c7',
+};
+
 export const metadata: Metadata = {
   title: 'Revizo — Turn Every Mistake Into Mastery | Intelligent Medical Revision',
   description:
     'Medically reviewed NEET-PG practice, adaptive spaced revision, mistake intelligence, and evidence-backed explanations.',
+  manifest: '/manifest.json',
 };
 
 export default function RootLayout({

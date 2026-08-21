@@ -10,7 +10,7 @@ export default function MobileNav() {
   const pathname = usePathname();
   const { user } = useAuth();
 
-  if (!user) return null;
+  if (!user || pathname.startsWith('/test/')) return null;
 
   const navItems = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
