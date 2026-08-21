@@ -96,7 +96,7 @@ export default function HomePage() {
         {/* Live Proof Counters */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-8 border-t border-slate-100 max-w-4xl mx-auto">
           <div className="space-y-1">
-            <p className="text-2xl font-black text-slate-900">891</p>
+            <p className="text-2xl font-black text-slate-900">871</p>
             <p className="text-xs font-semibold text-slate-500">Medically Reviewed Questions</p>
           </div>
           <div className="space-y-1">

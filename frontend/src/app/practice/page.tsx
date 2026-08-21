@@ -138,7 +138,7 @@ export default function PracticePage() {
         </div>
         <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">
           <ShieldCheck className="h-4 w-4 text-emerald-600" />
-          891 Medically Reviewed Questions
+          871 Medically Reviewed Questions
         </div>
       </div>
 
@@ -326,7 +326,7 @@ export default function PracticePage() {
           </div>
         </div>
         <p className="text-xs text-slate-600 leading-relaxed">
-          Revizo upholds strict medical accuracy standards. All 891 questions currently live are verified against standard medical textbooks (Harrison, Bailey & Love, Robbins, Park, etc.). We do not publish unverified memory recalls.
+          Revizo upholds strict medical accuracy standards. All 871 questions currently live are verified against standard medical textbooks (Harrison, Bailey & Love, Robbins, Park, etc.). We do not publish unverified memory recalls.
         </p>
       </div>
     </div>
