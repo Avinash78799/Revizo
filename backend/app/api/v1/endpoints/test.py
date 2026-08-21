@@ -37,6 +37,7 @@ class ReportQuestionRequest(BaseModel):
 
 @router.post("/start", response_model=TestSessionResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/create", response_model=TestSessionResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/generate", response_model=TestSessionResponse, status_code=status.HTTP_201_CREATED)
 async def start_test(
     req: CreateTestSessionRequest,
     request: Request,
@@ -45,6 +46,8 @@ async def start_test(
 ):
     rate_limiter.check_rate_limit(f"start_test:{current_user.id}", max_requests=20, window_seconds=60)
 
+    effective_count = req.get_effective_count()
+
     test_session, loaded_questions = await TestService.create_test_session(
         db=db,
         user_id=current_user.id,
@@ -52,7 +55,7 @@ async def start_test(
         subject_id=req.subject_id,
         chapter_id=req.chapter_id,
         topic_id=req.topic_id,
-        question_count=req.question_count
+        question_count=effective_count
     )
 
     sanitized_questions = [

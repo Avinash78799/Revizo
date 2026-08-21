@@ -111,7 +111,26 @@ class QuestionSelectionEngine:
             selection_override_reason = "M6_DUE_REVISION_OVERRIDE"
 
         res_all = await db.execute(base_query)
-        candidate_pool = res_all.scalars().all()
+        candidate_pool = list(res_all.scalars().all())
+
+        # If scoped topic/chapter has fewer items than requested, broaden to related subject questions
+        if len(candidate_pool) < question_count and mode_upper in ("TOPIC_TEST", "TOPIC", "CHAPTER_REVISION_TEST", "CHAPTER"):
+            existing_ids = {q.id for q in candidate_pool}
+            fallback_query = select(Question).options(
+                selectinload(Question.options),
+                selectinload(Question.concept).selectinload(Concept.topic).selectinload(Topic.chapter).selectinload(Chapter.subject)
+            ).where(
+                and_(
+                    Question.status.in_(cls.ELIGIBLE_STATUSES),
+                    Question.trust_class.in_(cls.ELIGIBLE_TRUST_CLASSES),
+                    Question.id.notin_(existing_ids)
+                )
+            )
+            if subject_id:
+                fallback_query = fallback_query.join(Concept, Question.concept_id == Concept.id).join(Topic, Concept.topic_id == Topic.id).join(Chapter, Topic.chapter_id == Chapter.id).where(Chapter.subject_id == subject_id)
+            res_fallback = await db.execute(fallback_query)
+            additional_candidates = res_fallback.scalars().all()
+            candidate_pool.extend(additional_candidates)
 
         if not candidate_pool:
             raise ValidationError(

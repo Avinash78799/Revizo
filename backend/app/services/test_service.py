@@ -427,14 +427,11 @@ class TestService:
         res_att = await db.execute(stmt_attempts)
         attempts = res_att.scalars().all()
 
-        correct_count = sum(1 for a in attempts if a.is_correct)
-        incorrect_count = sum(1 for a in attempts if not a.is_correct)
-        unanswered_count = max(0, session.total_questions - len(attempts))
-        danger_zone_count = sum(1 for a in attempts if a.is_danger_zone_item)
-        
-        # NEET-PG Scoring (+4 for correct, -1 for incorrect, 0 for unanswered)
-        score = (correct_count * 4) - (incorrect_count * 1)
-        session.score = score
+        scoring_dict = ScoringService.calculate_session_score(
+            total_questions=session.total_questions,
+            attempts=attempts
+        )
+        session.score = scoring_dict["score"]
         session.completed_questions = len(attempts)
 
         # Detailed Question-by-Question Review (Prompt 9, Sec 16)
@@ -454,16 +451,27 @@ class TestService:
             elif q.exam_relevance_tag == "PYQ_LINKED":
                 provenance_tag = "PYQ_STYLE"
 
+            concept_name = a.concept.name if a.concept else (q.concept.name if (q and q.concept) else "Medical Concept")
+            concept_id = a.concept_id or (q.concept_id if q else "")
+
             question_review.append({
                 "question_id": q.id,
+                "concept_id": concept_id,
+                "concept_name": concept_name,
                 "question_text": q.question_text,
+                "selected_option_key": a.selected_option_key,
                 "student_selected_key": a.selected_option_key,
-                "correct_option_key": correct_opt.option_key if correct_opt else None,
+                "correct_option_key": correct_opt.option_key if correct_opt else "A",
                 "is_correct": a.is_correct,
-                "confidence": a.confidence,
+                "confidence": a.confidence or "SOMEWHAT_CONFIDENT",
+                "time_spent_seconds": a.time_spent_seconds,
                 "response_time_seconds": a.time_spent_seconds,
-                "difficulty": q.difficulty,
+                "difficulty": q.difficulty or "moderate",
+                "is_danger_zone_item": a.is_danger_zone_item,
                 "provenance_tag": provenance_tag,
+                "correct_explanation": q.correct_explanation or "Refer to standard clinical guidelines.",
+                "remember_takeaway": q.remember_takeaway or "",
+                "exam_connection": q.exam_connection or "",
                 "short_explanation": {
                     "why_your_answer_is_wrong": selected_opt.why_wrong_explanation if selected_opt and not a.is_correct else None,
                     "why_correct_is_right": q.correct_explanation,
@@ -482,8 +490,6 @@ class TestService:
             if a.is_correct:
                 concept_breakdown[c_name]["correct"] += 1
 
-        accuracy_pct = round((correct_count / max(1, len(attempts))) * 100, 1)
-
         # Fetch Next Best Action Recommendation from M6
         next_action = await LearningIntelligenceEngine.get_next_best_action(db, user_id)
 
@@ -500,28 +506,21 @@ class TestService:
 
         return {
             "session_id": session.id,
+            "mode": session.mode or "custom_test",
             "status": session.status,
             "total_questions": session.total_questions,
             "completed_questions": len(attempts),
-            "correct_count": correct_count,
-            "incorrect_count": incorrect_count,
-            "unanswered_count": unanswered_count,
-            "score": score,
-            "accuracy_percentage": accuracy_pct,
-            "danger_zone_count": danger_zone_count,
-            "time_spent_seconds": sum(a.time_spent_seconds for a in attempts),
-            "scoring": {
-                "total_questions": session.total_questions,
-                "completed_questions": len(attempts),
-                "attempted_count": len(attempts),
-                "correct_count": correct_count,
-                "incorrect_count": incorrect_count,
-                "unanswered_count": unanswered_count,
-                "score": score,
-                "accuracy_percentage": accuracy_pct,
-                "danger_zone_count": danger_zone_count,
-                "time_spent_seconds": sum(a.time_spent_seconds for a in attempts)
-            },
+            "correct_count": scoring_dict["correct_count"],
+            "incorrect_count": scoring_dict["incorrect_count"],
+            "unanswered_count": scoring_dict["unanswered_count"],
+            "score": scoring_dict["score"],
+            "accuracy_percentage": scoring_dict["accuracy_percentage"],
+            "calibration_percentage": scoring_dict["calibration_percentage"],
+            "danger_zone_count": scoring_dict["danger_zone_count"],
+            "time_spent_seconds": scoring_dict["total_time_seconds"],
+            "started_at": session.started_at.isoformat() if session.started_at else None,
+            "submitted_at": session.submitted_at.isoformat() if session.submitted_at else None,
+            "scoring": scoring_dict,
             "concept_performance": concept_breakdown,
             "question_breakdowns": question_review,
             "question_review": question_review,

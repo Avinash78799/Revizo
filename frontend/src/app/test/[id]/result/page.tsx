@@ -55,13 +55,31 @@ export default function TestResultPage({ params }: { params: { id: string } }) {
     );
   }
 
-  const { scoring, question_breakdowns } = result;
+  const scoring = result.scoring || {
+    score: 0,
+    max_possible_score: (result.question_breakdowns?.length || 0) * 4,
+    accuracy_percentage: 0,
+    calibration_percentage: 0,
+    correct_count: 0,
+    incorrect_count: 0,
+    unanswered_count: 0,
+    total_time_seconds: 0,
+    avg_time_per_question_seconds: 0,
+    attempted_count: result.question_breakdowns?.length || 0,
+    danger_zone_count: 0,
+    total_questions: result.question_breakdowns?.length || 0,
+    confidence_breakdown: {},
+  };
 
-  const filteredQuestions = question_breakdowns.filter((q) => {
+  const questionBreakdowns = result.question_breakdowns || [];
+
+  const filteredQuestions = questionBreakdowns.filter((q) => {
     if (filter === 'incorrect') return !q.is_correct;
     if (filter === 'correct') return q.is_correct;
     return true;
   });
+
+  const displayMode = (result.mode || 'Practice Test').replace(/_/g, ' ');
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 space-y-8">
@@ -70,7 +88,7 @@ export default function TestResultPage({ params }: { params: { id: string } }) {
         <div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-[10px] font-bold text-brand-700 uppercase tracking-wider">
-              {result.mode.replace(/_/g, ' ')}
+              {displayMode}
             </span>
             <span className="text-xs text-slate-400">&bull; Test Completed</span>
           </div>
@@ -109,7 +127,7 @@ export default function TestResultPage({ params }: { params: { id: string } }) {
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-1">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Net Score</div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900">
-            {scoring.score} <span className="text-xs font-normal text-slate-400">/ {scoring.max_possible_score}</span>
+            {scoring.score} <span className="text-xs font-normal text-slate-400">/ {scoring.max_possible_score || (questionBreakdowns.length * 4)}</span>
           </div>
           <div className="text-[11px] text-slate-500 font-medium">+4 correct, -1 wrong</div>
         </div>
@@ -118,7 +136,7 @@ export default function TestResultPage({ params }: { params: { id: string } }) {
           <div className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Accuracy</div>
           <div className="text-2xl sm:text-3xl font-black text-emerald-600">{scoring.accuracy_percentage}%</div>
           <div className="text-[11px] text-slate-500 font-medium">
-            {scoring.correct_count}/{scoring.attempted_count} attempted
+            {scoring.correct_count}/{scoring.attempted_count || questionBreakdowns.length} attempted
           </div>
         </div>
 
@@ -139,10 +157,10 @@ export default function TestResultPage({ params }: { params: { id: string } }) {
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-1">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Time Spent</div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900">
-            {Math.round(scoring.total_time_seconds / 60)}m
+            {Math.round((scoring.total_time_seconds || 0) / 60)}m
           </div>
           <div className="text-[11px] text-slate-500 font-medium">
-            ~{scoring.avg_time_per_question_seconds}s / MCQ
+            ~{scoring.avg_time_per_question_seconds || 0}s / MCQ
           </div>
         </div>
       </div>
@@ -160,7 +178,7 @@ export default function TestResultPage({ params }: { params: { id: string } }) {
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              All ({question_breakdowns.length})
+              All ({questionBreakdowns.length})
             </button>
             <button
               onClick={() => setFilter('incorrect')}
