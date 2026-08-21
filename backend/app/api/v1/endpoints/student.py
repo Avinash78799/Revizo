@@ -139,7 +139,7 @@ async def get_mistakes(
     for m in mistakes:
         stmt_att = select(TestAttempt).where(
             and_(TestAttempt.user_id == current_user.id, TestAttempt.question_id == m.question_id)
-        ).order_by(TestAttempt.created_at.desc()).limit(1)
+        ).order_by(TestAttempt.answered_at.desc()).limit(1)
         res_att = await db.execute(stmt_att)
         latest_att = res_att.scalars().first()
         time_spent = latest_att.time_spent_seconds if latest_att else 20
