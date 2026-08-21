@@ -1,174 +1,143 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiRequest, SanitizedQuestion, EvaluationResult, TestSession } from '@/lib/api';
-import { ConfidenceSelector } from '@/components/ConfidenceSelector';
 import { ExplanationCard } from '@/components/ExplanationCard';
 import { TimerBadge } from '@/components/TimerBadge';
-import { IntegrityWarningModal } from '@/components/IntegrityWarningModal';
 import { TestRunnerSkeleton } from '@/components/Skeleton';
-import { ArrowRight, Flag, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
+import {
+  ArrowRight,
+  ArrowLeft,
+  Bookmark,
+  CheckCircle2,
+  AlertCircle,
+  HelpCircle,
+  Clock,
+  Layers,
+  Send,
+  Loader2,
+  BookOpen,
+} from 'lucide-react';
 
 export default function TestRunnerPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
   const [questions, setQuestions] = useState<SanitizedQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
-  const [confidence, setConfidence] = useState<string>('SOMEWHAT_CONFIDENT');
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [markedForReview, setMarkedForReview] = useState<Record<string, boolean>>({});
   const [startedAt, setStartedAt] = useState<string>(new Date().toISOString());
-  const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
-  const [showIntegrityModal, setShowIntegrityModal] = useState(false);
-  const [integrityCount, setIntegrityCount] = useState(0);
-  const [reporting, setReporting] = useState(false);
-  const [reportReason, setReportReason] = useState('INCORRECT');
-  const [reportText, setReportText] = useState('');
-  const [reportSuccess, setReportSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [studyMode, setStudyMode] = useState(false); // Default: Standard Exam Mode (review at end)
+  const [instantEvaluation, setInstantEvaluation] = useState<EvaluationResult | null>(null);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [questionTimes, setQuestionTimes] = useState<Record<string, number>>({});
+  const [currentStartTime, setCurrentStartTime] = useState<number>(Date.now());
 
-  const router = useRouter();
-
-  // Load questions or check active session
   useEffect(() => {
     async function loadTestQuestions() {
       try {
         const available = await apiRequest<SanitizedQuestion[]>('/questions/available');
         if (available && available.length > 0) {
-          setQuestions(available.slice(0, 5));
+          setQuestions(available.slice(0, 10));
         }
       } catch (err) {
         console.error('Failed to load questions:', err);
       } finally {
         setLoading(false);
-        setQuestionStartTime(Date.now());
+        setCurrentStartTime(Date.now());
       }
     }
     loadTestQuestions();
   }, [params.id]);
 
-  // Test Integrity Listener (Focus Loss / Tab Switch Detection)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        logIntegrityEvent('TAB_HIDDEN');
-      }
-    };
+  const currentQ = questions[currentIndex];
+  const isLast = currentIndex === questions.length - 1;
 
-    const handleBlur = () => {
-      logIntegrityEvent('WINDOW_BLURRED');
-    };
+  const handleSelectOption = (key: string) => {
+    if (studyMode && instantEvaluation) return; // locked in study mode until next
+    setAnswers((prev) => ({ ...prev, [currentQ.id]: key }));
+  };
 
-    window.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('blur', handleBlur);
+  const handleToggleMark = () => {
+    setMarkedForReview((prev) => ({ ...prev, [currentQ.id]: !prev[currentQ.id] }));
+  };
 
-    return () => {
-      window.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('blur', handleBlur);
-    };
-  }, [params.id]);
+  const handleNext = () => {
+    // Record time spent
+    const spent = Math.max(1, Math.round((Date.now() - currentStartTime) / 1000));
+    setQuestionTimes((prev) => ({ ...prev, [currentQ.id]: (prev[currentQ.id] || 0) + spent }));
 
-  const logIntegrityEvent = async (type: string) => {
-    try {
-      setIntegrityCount((c) => c + 1);
-      setShowIntegrityModal(true);
-      await apiRequest(`/tests/${params.id}/integrity-events`, {
-        method: 'POST',
-        body: JSON.stringify({
-          session_id: params.id,
-          event_type: type,
-          metadata: { timestamp: new Date().toISOString() },
-        }),
-      });
-    } catch {
-      // Non-blocking integrity logging
+    if (currentIndex + 1 < questions.length) {
+      setCurrentIndex((i) => i + 1);
+      setInstantEvaluation(null);
+      setCurrentStartTime(Date.now());
+    } else {
+      setShowSubmitModal(true);
     }
   };
 
-  const handleOptionSelect = (key: string) => {
-    if (evaluation) return; // Answer locked
-    setSelectedOption(key);
+  const handlePrev = () => {
+    if (currentIndex > 0) {
+      setCurrentIndex((i) => i - 1);
+      setInstantEvaluation(null);
+      setCurrentStartTime(Date.now());
+    }
   };
 
-  const handleSubmitAnswer = async () => {
-    if (!selectedOption || submitting) return;
+  // Check answer immediately if student enabled Study Mode
+  const handleCheckImmediate = async () => {
+    const selected = answers[currentQ.id];
+    if (!selected || submitting) return;
 
-    const currentQ = questions[currentIndex];
-    const timeSpent = Math.max(1, Math.round((Date.now() - questionStartTime) / 1000));
     setSubmitting(true);
-
     try {
       const evalRes = await apiRequest<EvaluationResult>(`/tests/${params.id}/answers`, {
         method: 'POST',
         body: JSON.stringify({
           question_id: currentQ.id,
-          selected_option_key: selectedOption,
-          confidence: confidence,
-          time_spent_seconds: timeSpent,
+          selected_option_key: selected,
+          confidence: 'SOMEWHAT_CONFIDENT',
+          time_spent_seconds: 10,
         }),
       });
-      setEvaluation(evalRes);
+      setInstantEvaluation(evalRes);
     } catch (err: any) {
-      alert(err.message || 'Submission error. Please check your connection.');
+      alert(err.message || 'Error checking answer.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleNextQuestion = () => {
-    if (currentIndex + 1 < questions.length) {
-      setCurrentIndex((i) => i + 1);
-      setSelectedOption(null);
-      setConfidence('SOMEWHAT_CONFIDENT');
-      setEvaluation(null);
-      setQuestionStartTime(Date.now());
-    } else {
+  // Final Test Submission
+  const handleFinalSubmit = async () => {
+    setSubmitting(true);
+    try {
+      // Submit all answered questions to backend
+      for (const q of questions) {
+        const selected = answers[q.id] || null;
+        if (selected) {
+          try {
+            await apiRequest(`/tests/${params.id}/answers`, {
+              method: 'POST',
+              body: JSON.stringify({
+                question_id: q.id,
+                selected_option_key: selected,
+                confidence: 'SOMEWHAT_CONFIDENT',
+                time_spent_seconds: questionTimes[q.id] || 15,
+              }),
+            });
+          } catch {
+            // continue
+          }
+        }
+      }
+
       router.push(`/test/${params.id}/result`);
-    }
-  };
-
-  const handleRetestConcept = async () => {
-    if (!evaluation) return;
-    try {
-      const altQ = await apiRequest<SanitizedQuestion>('/tests/retest-concept', {
-        method: 'POST',
-        body: JSON.stringify({
-          concept_id: evaluation.concept_id,
-          exclude_question_id: questions[currentIndex].id,
-        }),
-      });
-      // Replace current question with alternative question
-      const updated = [...questions];
-      updated[currentIndex] = altQ;
-      setQuestions(updated);
-      setSelectedOption(null);
-      setConfidence('SOMEWHAT_CONFIDENT');
-      setEvaluation(null);
-      setQuestionStartTime(Date.now());
     } catch (err: any) {
-      alert(err.message || 'No alternative question found for this concept.');
-    }
-  };
-
-  const handleSendReport = async () => {
-    const currentQ = questions[currentIndex];
-    try {
-      await apiRequest(`/questions/${currentQ.id}/report`, {
-        method: 'POST',
-        body: JSON.stringify({
-          reason: reportReason,
-          description: reportText,
-          is_serious_medical_error: reportReason === 'INCORRECT',
-        }),
-      });
-      setReportSuccess(true);
-      setTimeout(() => {
-        setReporting(false);
-        setReportSuccess(false);
-        setReportText('');
-      }, 1500);
-    } catch (err: any) {
-      alert(err.message || 'Report failed.');
+      alert(err.message || 'Failed to submit test.');
+      setSubmitting(false);
     }
   };
 
@@ -176,192 +145,260 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
     return <TestRunnerSkeleton />;
   }
 
-  const currentQuestion = questions[currentIndex];
-  const isLastQuestion = currentIndex === questions.length - 1;
+  const answeredCount = Object.keys(answers).length;
+  const isSelected = (key: string) => answers[currentQ.id] === key;
+  const isMarked = Boolean(markedForReview[currentQ.id]);
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8 space-y-6">
-      {/* Integrity Modal */}
-      <IntegrityWarningModal
-        isOpen={showIntegrityModal}
-        eventCount={integrityCount}
-        onDismiss={() => setShowIntegrityModal(false)}
-      />
-
-      {/* Header Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
+    <div className="mx-auto max-w-4xl px-4 py-6 space-y-6">
+      {/* Top Test Header Bar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            {currentQuestion.subject_name || 'Medical Sciences'} &bull; {currentQuestion.topic_name || 'Clinical Practice'}
-          </span>
-          <div className="text-sm font-bold text-slate-900 mt-0.5">
-            Question {currentIndex + 1} of {questions.length}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-brand-600">
+              {currentQ.subject_name || 'Medical Practice'} &bull; {currentQ.topic_name || 'Clinical Topic'}
+            </span>
           </div>
+          <h1 className="text-lg font-black text-slate-900 mt-0.5">
+            Question {currentIndex + 1} of {questions.length}
+          </h1>
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Study Mode Toggle */}
+          <button
+            type="button"
+            onClick={() => setStudyMode(!studyMode)}
+            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold border transition-all ${
+              studyMode
+                ? 'border-brand-500 bg-brand-50 text-brand-700'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <BookOpen className="h-3.5 w-3.5 text-brand-600" />
+            <span>{studyMode ? 'Study Mode (Instant Key)' : 'Exam Mode (Review at End)'}</span>
+          </button>
+
           <TimerBadge
             startedAt={startedAt}
-            durationMinutes={10}
-            onExpire={() => alert('Test duration has completed.')}
+            durationMinutes={15}
+            onExpire={() => setShowSubmitModal(true)}
           />
+
+          <button
+            onClick={() => setShowSubmitModal(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm transition-colors"
+          >
+            <Send className="h-3.5 w-3.5" />
+            Submit Test
+          </button>
         </div>
       </div>
 
-      {/* Question Stem */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-        <p className="text-sm sm:text-base font-medium text-slate-900 leading-relaxed">
-          {currentQuestion.question_text}
+      {/* Encouraging Realistic Marking Reminder */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2 text-[11px] text-slate-600 flex items-center justify-between">
+        <span>
+          💡 <strong>NEET-PG Practice (+4 / -1 / 0)</strong>: Mimics real exam marking. Take your time to test your recall without stress!
+        </span>
+        <span className="font-semibold text-slate-700">
+          Answered: {answeredCount}/{questions.length}
+        </span>
+      </div>
+
+      {/* Main Question Card */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm space-y-6">
+        <p className="text-sm sm:text-base font-semibold text-slate-900 leading-relaxed">
+          {currentQ.question_text}
         </p>
 
-        {/* Option Choices */}
-        <div className="space-y-2.5 pt-2">
-          {currentQuestion.options.map((opt) => {
-            const isSelected = selectedOption === opt.option_key;
-            let optStyle = 'border-slate-200 bg-white hover:border-slate-300 text-slate-800';
+        {/* Options Grid */}
+        <div className="space-y-3 pt-1">
+          {currentQ.options.map((opt) => {
+            const selected = isSelected(opt.option_key);
+            let style = 'border-slate-200 bg-white hover:border-slate-300 text-slate-800';
 
-            if (evaluation) {
-              if (opt.option_key === evaluation.correct_option_key) {
-                optStyle = 'border-emerald-500 bg-emerald-50 text-emerald-950 font-semibold ring-1 ring-emerald-400';
-              } else if (isSelected && !evaluation.is_correct) {
-                optStyle = 'border-rose-500 bg-rose-50 text-rose-950 font-semibold ring-1 ring-rose-400';
+            if (studyMode && instantEvaluation) {
+              if (opt.option_key === instantEvaluation.correct_option_key) {
+                style = 'border-emerald-500 bg-emerald-50 text-emerald-950 font-semibold ring-1 ring-emerald-500';
+              } else if (selected && !instantEvaluation.is_correct) {
+                style = 'border-rose-500 bg-rose-50 text-rose-950 font-semibold ring-1 ring-rose-500';
               } else {
-                optStyle = 'border-slate-200 bg-slate-50/50 opacity-60 text-slate-500';
+                style = 'border-slate-200 bg-slate-50/50 opacity-60 text-slate-500';
               }
-            } else if (isSelected) {
-              optStyle = 'border-brand-600 bg-brand-50 text-brand-950 font-semibold ring-1 ring-brand-500';
+            } else if (selected) {
+              style = 'border-brand-600 bg-brand-50 text-brand-950 font-bold ring-2 ring-brand-500/20';
             }
 
             return (
               <button
                 key={opt.option_key}
                 type="button"
-                disabled={Boolean(evaluation)}
-                onClick={() => handleOptionSelect(opt.option_key)}
-                className={`w-full flex items-start gap-3 rounded-xl border p-3.5 text-left text-xs sm:text-sm transition-all ${optStyle}`}
+                onClick={() => handleSelectOption(opt.option_key)}
+                className={`w-full flex items-start gap-3.5 rounded-xl border p-4 text-left text-xs sm:text-sm transition-all ${style}`}
               >
                 <span
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                    isSelected
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-100 text-slate-700'
+                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
+                    selected ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700'
                   }`}
                 >
                   {opt.option_key}
                 </span>
-                <span className="mt-0.5 leading-snug">{opt.option_text}</span>
+                <span className="mt-0.5 leading-relaxed">{opt.option_text}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Study Mode Instant Explanation View (if enabled) */}
+        {studyMode && instantEvaluation && (
+          <div className="pt-4">
+            <ExplanationCard question={currentQ} result={instantEvaluation} />
+          </div>
+        )}
+
+        {/* Controls Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePrev}
+              disabled={currentIndex === 0}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Previous
+            </button>
+
+            <button
+              type="button"
+              onClick={handleToggleMark}
+              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold border transition-colors ${
+                isMarked
+                  ? 'border-purple-300 bg-purple-50 text-purple-700'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Bookmark className="h-3.5 w-3.5" />
+              {isMarked ? 'Marked for Review' : 'Mark for Review'}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {studyMode && !instantEvaluation && answers[currentQ.id] && (
+              <button
+                type="button"
+                onClick={handleCheckImmediate}
+                disabled={submitting}
+                className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800"
+              >
+                {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                Check Explanation
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleNext}
+              className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-5 py-2 text-xs font-bold text-white hover:bg-brand-700 shadow-sm transition-colors"
+            >
+              {isLast ? 'Review & Submit' : 'Next Question'}
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Question Palette Navigator */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-bold text-slate-900">Question Palette</span>
+          <div className="flex items-center gap-3 text-[11px] text-slate-500">
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-full bg-brand-600 inline-block" /> Answered
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-full bg-purple-500 inline-block" /> Marked
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-full bg-slate-200 inline-block" /> Unanswered
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          {questions.map((q, idx) => {
+            const isAns = Boolean(answers[q.id]);
+            const isMrk = Boolean(markedForReview[q.id]);
+            const isCur = idx === currentIndex;
+
+            let btnStyle = 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100';
+            if (isAns) btnStyle = 'border-brand-500 bg-brand-600 text-white font-bold';
+            if (isMrk) btnStyle = 'border-purple-500 bg-purple-100 text-purple-800 font-bold';
+            if (isCur) btnStyle += ' ring-2 ring-slate-900 ring-offset-1';
+
+            return (
+              <button
+                key={q.id}
+                type="button"
+                onClick={() => {
+                  setCurrentIndex(idx);
+                  setInstantEvaluation(null);
+                  setCurrentStartTime(Date.now());
+                }}
+                className={`flex h-9 w-9 items-center justify-center rounded-xl border text-xs transition-all ${btnStyle}`}
+              >
+                {idx + 1}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Pre-submission: Confidence Selection & Submit */}
-      {!evaluation ? (
-        <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <ConfidenceSelector
-            value={confidence}
-            onChange={setConfidence}
-            disabled={submitting}
-          />
-
-          <div className="flex justify-end pt-2">
-            <button
-              onClick={handleSubmitAnswer}
-              disabled={!selectedOption || submitting}
-              className="flex items-center gap-2 rounded-lg bg-slate-900 px-6 py-2.5 text-xs font-bold text-white shadow hover:bg-slate-800 disabled:opacity-40 transition-colors"
-            >
-              {submitting ? 'Evaluating Answer...' : 'Submit Answer'}
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      ) : (
-        /* Post-submission: Structured Explanation Anatomy */
-        <div className="space-y-4">
-          <ExplanationCard
-            result={evaluation}
-            onRetest={handleRetestConcept}
-            onReport={() => setReporting(true)}
-          />
-
-          <div className="flex justify-end pt-2">
-            <button
-              onClick={handleNextQuestion}
-              className="flex items-center gap-2 rounded-lg bg-slate-900 px-6 py-3 text-xs font-bold text-white shadow hover:bg-slate-800 transition-colors"
-            >
-              {isLastQuestion ? 'Finish Test & View Analysis' : 'Next Question'}
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Question Reporting Modal */}
-      {reporting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                <Flag className="h-4 w-4 text-rose-600" />
-                Report Medical Question
-              </h3>
-              <button onClick={() => setReporting(false)} className="text-xs text-slate-400 hover:text-slate-600">
-                Cancel
-              </button>
+      {/* Submit Confirmation Modal */}
+      {showSubmitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <h3 className="text-base font-bold text-slate-900">Submit Practice Test?</h3>
+            <div className="rounded-xl bg-slate-50 p-4 text-xs space-y-1.5 text-slate-600">
+              <p>
+                &bull; Total Questions: <strong>{questions.length}</strong>
+              </p>
+              <p>
+                &bull; Answered: <strong className="text-emerald-700">{answeredCount}</strong>
+              </p>
+              <p>
+                &bull; Unanswered:{' '}
+                <strong className="text-rose-700">{questions.length - answeredCount}</strong>
+              </p>
+              <p>
+                &bull; Marked for Review:{' '}
+                <strong className="text-purple-700">
+                  {Object.values(markedForReview).filter(Boolean).length}
+                </strong>
+              </p>
             </div>
 
-            {reportSuccess ? (
-              <div className="flex items-center gap-2 rounded-lg bg-emerald-50 p-4 text-xs font-bold text-emerald-800">
-                <CheckCircle className="h-4 w-4 text-emerald-600" />
-                Thanks. This question has been flagged for medical review.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Reason for report</label>
-                  <select
-                    value={reportReason}
-                    onChange={(e) => setReportReason(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:border-brand-500 focus:outline-none bg-white"
-                  >
-                    <option value="INCORRECT">Incorrect Answer / Medical Fact Error (Auto-Quarantine)</option>
-                    <option value="AMBIGUOUS">Ambiguous / Multiple Best Answers</option>
-                    <option value="TYPO">Typo / Grammatical Issue</option>
-                    <option value="OUTDATED">Outdated Clinical Guideline</option>
-                    <option value="OUT_OF_SYLLABUS">Out of NEET-PG Syllabus</option>
-                    <option value="POOR_EXPLANATION">Poor Explanation</option>
-                    <option value="OTHER">Other Issue</option>
-                  </select>
-                </div>
+            <p className="text-xs text-slate-500">
+              Upon submission, you will see your full score (+4 / -1) and can review all 4-part explanations and clinical pearls.
+            </p>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Description / Textbook Reference (Optional)</label>
-                  <textarea
-                    rows={3}
-                    value={reportText}
-                    onChange={(e) => setReportText(e.target.value)}
-                    placeholder="Provide details or standard textbook page reference..."
-                    className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:border-brand-500 focus:outline-none"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    onClick={() => setReporting(false)}
-                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-                  >
-                    Close
-                  </button>
-                  <button
-                    onClick={handleSendReport}
-                    className="rounded-lg bg-rose-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-rose-700"
-                  >
-                    Submit Report
-                  </button>
-                </div>
-              </div>
-            )}
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowSubmitModal(false)}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Continue Test
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={handleFinalSubmit}
+                className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow"
+              >
+                {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                Confirm Submission
+              </button>
+            </div>
           </div>
         </div>
       )}
