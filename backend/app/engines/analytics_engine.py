@@ -21,7 +21,7 @@ class AnalyticsEngine:
         profile = res_prof.scalars().first()
         daily_goal = profile.daily_question_goal if profile else 10
 
-        # 2. Overall Attempts and Accuracy
+        # 2. Overall Attempts, Accuracy and Calibration
         stmt_attempts = select(TestAttempt).where(TestAttempt.user_id == user_id)
         res_attempts = await session.execute(stmt_attempts)
         all_attempts = res_attempts.scalars().all()
@@ -29,6 +29,27 @@ class AnalyticsEngine:
         correct_attempts = sum(1 for a in all_attempts if a.is_correct)
         overall_accuracy = round((correct_attempts / total_attempts * 100.0), 1) if total_attempts > 0 else 0.0
         total_mistakes = total_attempts - correct_attempts
+
+        # Calibration %: how often stated confidence matched actual correctness
+        calibrated_points = 0.0
+        for a in all_attempts:
+            conf = (a.confidence or "SOMEWHAT_CONFIDENT").upper()
+            if conf == "DEFINITELY_KNOW":
+                if a.is_correct:
+                    calibrated_points += 1.0
+            elif conf in ["GUESSING", "LOW", "UNSURE"]:
+                if not a.is_correct:
+                    calibrated_points += 1.0
+                else:
+                    calibrated_points += 0.3
+            else:  # SOMEWHAT_CONFIDENT
+                if a.is_correct:
+                    calibrated_points += 0.8
+                else:
+                    calibrated_points += 0.5
+
+        overall_calibration = round((calibrated_points / total_attempts * 100.0), 1) if total_attempts > 0 else 0.0
+
 
         # 3. Concepts Due for Revision
         stmt_due = select(StudentConceptMastery).where(
@@ -99,7 +120,8 @@ class AnalyticsEngine:
             danger_zone_count=danger_count,
             total_mistakes_count=total_mistakes,
             total_questions_attempted=total_attempts,
-            overall_accuracy_percentage=overall_accuracy
+            overall_accuracy_percentage=overall_accuracy,
+            calibration_percentage=overall_calibration
         )
 
     @staticmethod

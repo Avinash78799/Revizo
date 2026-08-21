@@ -135,12 +135,12 @@ export default function DashboardPage() {
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-xs font-medium text-slate-500">Accuracy & Practice</div>
+          <div className="text-xs font-medium text-slate-500">Accuracy & Calibration</div>
           <div className="mt-1 text-2xl font-extrabold text-slate-900">
             {data.total_questions_attempted > 0 ? `${data.overall_accuracy_percentage}%` : '—'}
           </div>
-          <div className="mt-1 text-[11px] text-slate-500">
-            {data.total_questions_attempted} attempts ({data.total_mistakes_count} mistakes)
+          <div className="mt-1 text-[11px] text-slate-500 font-medium">
+            {data.total_questions_attempted > 0 ? `${data.calibration_percentage || 0}% calibrated confidence` : `${data.total_questions_attempted} total solved`}
           </div>
         </div>
       </div>

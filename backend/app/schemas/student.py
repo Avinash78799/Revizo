@@ -35,3 +35,5 @@ class DashboardResponse(BaseModel):
     total_mistakes_count: int
     total_questions_attempted: int
     overall_accuracy_percentage: float
+    calibration_percentage: float = 0.0
+

@@ -55,6 +55,30 @@ class ScoringService:
                 if conf_key == "DEFINITELY_KNOW":
                     danger_zone_count += 1
 
+        # Calibration Calculation: how often stated confidence matched actual correctness
+        calibrated_points = 0.0
+        for a in attempts:
+            conf = (a.confidence or "SOMEWHAT_CONFIDENT").upper()
+            if conf == "DEFINITELY_KNOW":
+                if a.is_correct:
+                    calibrated_points += 1.0
+            elif conf in ["GUESSING", "LOW", "UNSURE"]:
+                if not a.is_correct:
+                    calibrated_points += 1.0
+                else:
+                    calibrated_points += 0.3
+            else:  # SOMEWHAT_CONFIDENT
+                if a.is_correct:
+                    calibrated_points += 0.8
+                else:
+                    calibrated_points += 0.5
+
+        calibration_percentage = (
+            round((calibrated_points / len(attempts)) * 100.0, 1)
+            if len(attempts) > 0
+            else 0.0
+        )
+
         return {
             "total_questions": total_questions,
             "attempted_count": len(attempts),
@@ -64,6 +88,7 @@ class ScoringService:
             "score": neet_pg_score,
             "max_possible_score": max_possible_score,
             "accuracy_percentage": accuracy_percentage,
+            "calibration_percentage": calibration_percentage,
             "total_time_seconds": total_time_seconds,
             "avg_time_per_question_seconds": avg_time_per_question,
             "danger_zone_count": danger_zone_count,

@@ -105,36 +105,44 @@ export default function TestResultPage({ params }: { params: { id: string } }) {
       </div>
 
       {/* Primary Score Metrics Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-1">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-1">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Net Score</div>
-          <div className="text-3xl font-black text-slate-900">
+          <div className="text-2xl sm:text-3xl font-black text-slate-900">
             {scoring.score} <span className="text-xs font-normal text-slate-400">/ {scoring.max_possible_score}</span>
           </div>
-          <div className="text-[11px] text-slate-500 font-medium">+4 for correct, -1 for wrong</div>
+          <div className="text-[11px] text-slate-500 font-medium">+4 correct, -1 wrong</div>
         </div>
 
-        <div className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm space-y-1">
+        <div className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm space-y-1">
           <div className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Accuracy</div>
-          <div className="text-3xl font-black text-emerald-600">{scoring.accuracy_percentage}%</div>
+          <div className="text-2xl sm:text-3xl font-black text-emerald-600">{scoring.accuracy_percentage}%</div>
           <div className="text-[11px] text-slate-500 font-medium">
-            {scoring.correct_count} of {scoring.attempted_count} attempted
+            {scoring.correct_count}/{scoring.attempted_count} attempted
           </div>
         </div>
 
-        <div className="rounded-2xl border border-rose-200 bg-white p-5 shadow-sm space-y-1">
-          <div className="text-xs font-bold text-rose-700 uppercase tracking-wider">Negative Marks</div>
-          <div className="text-3xl font-black text-rose-600">-{scoring.incorrect_count}</div>
-          <div className="text-[11px] text-slate-500 font-medium">{scoring.incorrect_count} incorrect answers</div>
+        <div className="rounded-2xl border border-brand-200 bg-white p-4 shadow-sm space-y-1">
+          <div className="text-xs font-bold text-brand-700 uppercase tracking-wider">Calibration</div>
+          <div className="text-2xl sm:text-3xl font-black text-brand-600">
+            {scoring.calibration_percentage ?? scoring.accuracy_percentage}%
+          </div>
+          <div className="text-[11px] text-slate-500 font-medium">Confidence alignment</div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-1">
+        <div className="rounded-2xl border border-rose-200 bg-white p-4 shadow-sm space-y-1">
+          <div className="text-xs font-bold text-rose-700 uppercase tracking-wider">Negative Marks</div>
+          <div className="text-2xl sm:text-3xl font-black text-rose-600">-{scoring.incorrect_count}</div>
+          <div className="text-[11px] text-slate-500 font-medium">{scoring.incorrect_count} incorrect</div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-1">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Time Spent</div>
-          <div className="text-3xl font-black text-slate-900">
+          <div className="text-2xl sm:text-3xl font-black text-slate-900">
             {Math.round(scoring.total_time_seconds / 60)}m
           </div>
           <div className="text-[11px] text-slate-500 font-medium">
-            ~{scoring.avg_time_per_question_seconds}s per question
+            ~{scoring.avg_time_per_question_seconds}s / MCQ
           </div>
         </div>
       </div>

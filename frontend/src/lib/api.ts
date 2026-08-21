@@ -114,6 +114,7 @@ export interface TestScoring {
   accuracy_percentage: number;
   total_time_seconds: number;
   avg_time_per_question_seconds: number;
+  calibration_percentage?: number;
   danger_zone_count: number;
   confidence_breakdown: Record<string, { total: number; correct: number; incorrect: number }>;
 }
@@ -179,6 +180,7 @@ export interface DashboardData {
   total_mistakes_count: number;
   total_questions_attempted: number;
   overall_accuracy_percentage: number;
+  calibration_percentage?: number;
 }
 
 export interface MistakeItem {
