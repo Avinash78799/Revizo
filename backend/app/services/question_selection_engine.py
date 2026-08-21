@@ -110,10 +110,14 @@ class QuestionSelectionEngine:
         elif mode_upper in ("REVISION", "REVISION_TEST", "FIVE_MINUTE_REVISION", "five_minute_revision"):
             selection_override_reason = "M6_DUE_REVISION_OVERRIDE"
 
+        # 2. Build Mode-Specific Question Query
         res_all = await db.execute(base_query)
         candidate_pool = list(res_all.scalars().all())
+        for q in candidate_pool:
+            q._is_broadened_pool = False
+            q._scope_note = None
 
-        # If scoped topic/chapter has fewer items than requested, broaden to related subject questions
+        # If scoped topic/chapter has fewer items than requested, broaden to related subject questions with explicit disclosure
         if len(candidate_pool) < question_count and mode_upper in ("TOPIC_TEST", "TOPIC", "CHAPTER_REVISION_TEST", "CHAPTER"):
             existing_ids = {q.id for q in candidate_pool}
             fallback_query = select(Question).options(
@@ -130,6 +134,10 @@ class QuestionSelectionEngine:
                 fallback_query = fallback_query.join(Concept, Question.concept_id == Concept.id).join(Topic, Concept.topic_id == Topic.id).join(Chapter, Topic.chapter_id == Chapter.id).where(Chapter.subject_id == subject_id)
             res_fallback = await db.execute(fallback_query)
             additional_candidates = res_fallback.scalars().all()
+            for q in additional_candidates:
+                q._is_broadened_pool = True
+                s_name = q.concept.topic.chapter.subject.name if (q.concept and q.concept.topic and q.concept.topic.chapter and q.concept.topic.chapter.subject) else "Related Subject"
+                q._scope_note = f"From: {s_name} (Topic pool exhausted)"
             candidate_pool.extend(additional_candidates)
 
         if not candidate_pool:
@@ -182,7 +190,7 @@ class QuestionSelectionEngine:
         """
         Sanitizes question for student test runner:
         STRIPS correct_option_key, correct_explanation, why_wrong_explanation, remember_takeaway.
-        PRESERVES question_text, options, difficulty, provenance tag, trust_class, is_high_yield.
+        PRESERVES question_text, options, difficulty, provenance tag, trust_class, is_high_yield, is_broadened_pool, scope_note.
         """
         provenance_tag = "ORIGINAL_AI_GENERATED"
         if getattr(question, "trust_class", "") == "development_seed":
@@ -217,5 +225,7 @@ class QuestionSelectionEngine:
                     "option_text": opt.option_text
                 }
                 for opt in question.options
-            ]
+            ],
+            "is_broadened_pool": getattr(question, "_is_broadened_pool", False),
+            "scope_note": getattr(question, "_scope_note", None),
         }

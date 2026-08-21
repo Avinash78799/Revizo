@@ -26,6 +26,8 @@ class SanitizedQuestionResponse(BaseModel):
     is_high_yield: bool
     question_text: str
     options: List[SanitizedOptionResponse]
+    is_broadened_pool: bool = False
+    scope_note: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 class QuestionDetailResponse(BaseModel):

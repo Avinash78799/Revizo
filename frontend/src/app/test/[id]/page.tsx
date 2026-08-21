@@ -12,6 +12,7 @@ import {
   Bookmark,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   HelpCircle,
   Clock,
   Layers,
@@ -207,6 +208,15 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
 
       {/* Main Question Card */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm space-y-6">
+        {currentQ.is_broadened_pool && (
+          <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 font-medium">
+            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>{currentQ.scope_note || 'Related Subject Question'}</strong> — included to complete your {questions.length}-question test because the target topic pool had fewer questions available.
+            </span>
+          </div>
+        )}
+
         <p className="text-sm sm:text-base font-semibold text-slate-900 leading-relaxed">
           {currentQ.question_text}
         </p>

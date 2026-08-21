@@ -234,9 +234,16 @@ export default function TestResultPage({ params }: { params: { id: string } }) {
                   {idx + 1}
                 </div>
                 <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    {q.concept_name || 'Medical Concept'}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      {q.concept_name || 'Medical Concept'}
+                    </span>
+                    {q.is_broadened_pool && (
+                      <span className="rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                        {q.scope_note || 'Related Subject Question'}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs font-bold text-slate-800">
                     {q.is_correct ? (
                       <span className="text-emerald-700 font-bold">+4 Correct Response</span>

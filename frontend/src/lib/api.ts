@@ -73,6 +73,8 @@ export interface SanitizedQuestion {
   is_high_yield: boolean;
   question_text: string;
   options: SanitizedOption[];
+  is_broadened_pool?: boolean;
+  scope_note?: string;
 }
 
 export interface TestSession {
@@ -132,6 +134,8 @@ export interface QuestionBreakdown {
   is_danger_zone_item: boolean;
   correct_explanation: string;
   remember_takeaway: string;
+  is_broadened_pool?: boolean;
+  scope_note?: string;
 }
 
 export interface TestResultData {
