@@ -249,3 +249,79 @@ async def create_misconception_retest(
         "difficulty": q.difficulty,
         "options": [{"option_key": o.option_key, "option_text": o.option_text} for o in q.options]
     }
+
+
+class BookmarkRequest(BaseModel):
+    question_id: str
+    notes: Optional[str] = None
+
+
+@router.post("/bookmarks")
+async def toggle_bookmark(
+    payload: BookmarkRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Feature 8: Smart Bookmarks + Personal Notes.
+    """
+    from app.models.learning import UserQuestionBookmark
+    stmt = select(UserQuestionBookmark).where(
+        and_(
+            UserQuestionBookmark.user_id == current_user.id,
+            UserQuestionBookmark.question_id == payload.question_id
+        )
+    )
+    res = await db.execute(stmt)
+    existing = res.scalars().first()
+
+    if existing:
+        if payload.notes is not None:
+            existing.notes = payload.notes
+            await db.commit()
+            return {"status": "updated", "bookmarked": True, "notes": existing.notes}
+        else:
+            await db.delete(existing)
+            await db.commit()
+            return {"status": "removed", "bookmarked": False}
+    else:
+        new_bm = UserQuestionBookmark(
+            user_id=current_user.id,
+            question_id=payload.question_id,
+            notes=payload.notes
+        )
+        db.add(new_bm)
+        await db.commit()
+        return {"status": "created", "bookmarked": True, "notes": payload.notes}
+
+
+@router.get("/bookmarks")
+async def get_bookmarks(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns user bookmarked questions with clinical revision notes.
+    """
+    from app.models.learning import UserQuestionBookmark
+    stmt = select(UserQuestionBookmark).options(
+        selectinload(UserQuestionBookmark.question).selectinload(Question.concept)
+    ).where(
+        UserQuestionBookmark.user_id == current_user.id
+    ).order_by(UserQuestionBookmark.created_at.desc())
+    res = await db.execute(stmt)
+    bms = res.scalars().all()
+
+    return [
+        {
+            "id": b.id,
+            "question_id": b.question_id,
+            "notes": b.notes,
+            "created_at": b.created_at.isoformat(),
+            "question_text": b.question.question_text if b.question else "Question Text",
+            "concept_name": b.question.concept.name if (b.question and b.question.concept) else "Concept",
+            "takeaway_pearl": b.question.remember_takeaway if b.question else ""
+        }
+        for b in bms
+    ]
+

@@ -168,3 +168,21 @@ class RevisionSchedule(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="revision_schedules")
+
+
+class UserQuestionBookmark(Base):
+    """
+    Feature 8: Smart Bookmarks and Personal Revision Notes.
+    Enables medical students to bookmark questions and attach clinical learning notes.
+    """
+    __tablename__ = "user_question_bookmarks"
+    __table_args__ = {"extend_existing": True}
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id: Mapped[str] = mapped_column(String(36), ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    question: Mapped["Question"] = relationship("Question", lazy="selectin")
+
