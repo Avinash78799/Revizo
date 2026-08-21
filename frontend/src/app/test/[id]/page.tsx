@@ -209,10 +209,10 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
           <TimerBadge
             startedAt={startedAt}
             durationMinutes={Math.max(15, Math.ceil((questions.length || 10) * 1.5))}
-            onExpire={() => setShowSubmitModal(true)}
           />
 
           <button
+            type="button"
             onClick={() => setShowSubmitModal(true)}
             className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm transition-colors"
           >
