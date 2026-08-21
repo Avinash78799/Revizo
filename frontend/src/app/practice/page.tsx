@@ -90,6 +90,10 @@ export default function PracticePage() {
     setLoading(true);
     try {
       let resolvedMode = mode;
+      if (selectedTopicId) resolvedMode = 'topic_test';
+      else if (selectedChapterId) resolvedMode = 'chapter_test';
+      else if (selectedSubjectId) resolvedMode = 'subject_test';
+
       if (targetFocus === 'mistakes') resolvedMode = 'mistake_retest';
       else if (targetFocus === 'danger_zone') resolvedMode = 'danger_zone_retest';
       else if (targetFocus === 'due_revision') resolvedMode = 'five_minute_revision';
@@ -98,7 +102,10 @@ export default function PracticePage() {
         method: 'POST',
         body: JSON.stringify({
           mode: resolvedMode,
-          subject_id: subjectId || null,
+          subject_id: selectedSubjectId || null,
+          chapter_id: selectedChapterId || null,
+          topic_id: selectedTopicId || null,
+          question_count: count,
           total_questions: count,
         }),
       });
