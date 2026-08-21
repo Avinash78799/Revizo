@@ -47,6 +47,11 @@ class CreateConceptRequest(BaseModel):
 async def list_subjects(db: AsyncSession = Depends(get_db)):
     return await TaxonomyService.get_all_subjects(db)
 
+@router.get("/tree", response_model=List[SubjectResponse])
+async def get_full_taxonomy_tree(db: AsyncSession = Depends(get_db)):
+    """Returns all subjects with their full chapter/topic/concept tree."""
+    return await TaxonomyService.get_all_subjects(db)
+
 @router.get("/subjects/{subject_id}/tree", response_model=SubjectResponse)
 async def get_subject_tree(subject_id: str, db: AsyncSession = Depends(get_db)):
     return await TaxonomyService.get_subject_by_id(db, subject_id)

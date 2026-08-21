@@ -29,35 +29,41 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
   const [markedForReview, setMarkedForReview] = useState<Record<string, boolean>>({});
   const [startedAt, setStartedAt] = useState<string>(new Date().toISOString());
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [studyMode, setStudyMode] = useState(false); // Default: Standard Exam Mode (review at end)
+  const [studyMode, setStudyMode] = useState(false);
   const [instantEvaluation, setInstantEvaluation] = useState<EvaluationResult | null>(null);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [questionTimes, setQuestionTimes] = useState<Record<string, number>>({});
   const [currentStartTime, setCurrentStartTime] = useState<number>(Date.now());
 
   useEffect(() => {
-    async function loadTestQuestions() {
+    async function loadTestSession() {
       try {
-        const available = await apiRequest<SanitizedQuestion[]>('/questions/available');
-        if (available && available.length > 0) {
-          setQuestions(available.slice(0, 10));
+        // Load the test session with its questions from the backend
+        const session = await apiRequest<TestSession>(`/tests/${params.id}`);
+        if (session && session.questions && session.questions.length > 0) {
+          setQuestions(session.questions);
+          setStartedAt(session.started_at);
+        } else {
+          setError('This test session contains no questions. Please start a new test.');
         }
-      } catch (err) {
-        console.error('Failed to load questions:', err);
+      } catch (err: any) {
+        console.error('Failed to load test session:', err);
+        setError(err.message || 'Failed to load test session. Please try again.');
       } finally {
         setLoading(false);
         setCurrentStartTime(Date.now());
       }
     }
-    loadTestQuestions();
+    loadTestSession();
   }, [params.id]);
 
   const currentQ = questions[currentIndex];
   const isLast = currentIndex === questions.length - 1;
 
   const handleSelectOption = (key: string) => {
-    if (studyMode && instantEvaluation) return; // locked in study mode until next
+    if (studyMode && instantEvaluation) return;
     setAnswers((prev) => ({ ...prev, [currentQ.id]: key }));
   };
 
@@ -66,7 +72,6 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
   };
 
   const handleNext = () => {
-    // Record time spent
     const spent = Math.max(1, Math.round((Date.now() - currentStartTime) / 1000));
     setQuestionTimes((prev) => ({ ...prev, [currentQ.id]: (prev[currentQ.id] || 0) + spent }));
 
@@ -87,7 +92,6 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
     }
   };
 
-  // Check answer immediately if student enabled Study Mode
   const handleCheckImmediate = async () => {
     const selected = answers[currentQ.id];
     if (!selected || submitting) return;
@@ -111,7 +115,6 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
     }
   };
 
-  // Final Test Submission
   const handleFinalSubmit = async () => {
     setSubmitting(true);
     try {
@@ -130,9 +133,16 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
               }),
             });
           } catch {
-            // continue
+            // continue — may be duplicate submission
           }
         }
+      }
+
+      // Complete the test session
+      try {
+        await apiRequest(`/tests/${params.id}/complete`, { method: 'POST' });
+      } catch {
+        // may already be completed
       }
 
       router.push(`/test/${params.id}/result`);
@@ -142,8 +152,24 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
     }
   };
 
-  if (loading || questions.length === 0) {
+  if (loading) {
     return <TestRunnerSkeleton />;
+  }
+
+  if (error || questions.length === 0) {
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-16 text-center space-y-4">
+        <AlertCircle className="h-12 w-12 text-rose-500 mx-auto" />
+        <h2 className="text-lg font-bold text-slate-900">Test Could Not Be Loaded</h2>
+        <p className="text-sm text-slate-600">{error || 'No questions found for this test session.'}</p>
+        <button
+          onClick={() => router.push('/practice')}
+          className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-brand-700"
+        >
+          Start a New Test
+        </button>
+      </div>
+    );
   }
 
   const answeredCount = Object.keys(answers).length;

@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, status, Request, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
-from app.models.test import IntegrityEvent
+from app.models.test import IntegrityEvent, TestSession
 from app.schemas.test import CreateTestSessionRequest, TestSessionResponse
 from app.schemas.question import (
     AnswerSubmissionRequest,
@@ -57,6 +58,61 @@ async def start_test(
         topic_id=req.topic_id,
         question_count=effective_count
     )
+
+    sanitized_questions = [
+        QuestionSelectionEngine.format_question_for_student_runner(q)
+        for q in loaded_questions
+    ]
+
+    return TestSessionResponse(
+        session_id=test_session.id,
+        user_id=test_session.user_id,
+        mode=test_session.mode,
+        total_questions=test_session.total_questions,
+        completed_questions=test_session.completed_questions,
+        score=test_session.score,
+        started_at=test_session.started_at,
+        questions=sanitized_questions
+    )
+
+@router.get("/{session_id}", response_model=TestSessionResponse)
+async def get_test_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retrieves an existing test session with its sanitized questions.
+    Used by the test runner page to reload questions for a session.
+    """
+    from sqlalchemy.orm import selectinload as sel
+    from app.models.question import Question
+    from app.models.taxonomy import Concept, Topic, Chapter, Subject
+
+    stmt = select(TestSession).where(
+        TestSession.id == session_id,
+        TestSession.user_id == current_user.id
+    )
+    res = await db.execute(stmt)
+    test_session = res.scalars().first()
+
+    if not test_session:
+        raise HTTPException(status_code=404, detail="Test session not found or unauthorized.")
+
+    # Load the questions through the TestQuestion join table
+    from app.models.test import TestQuestion
+    q_stmt = (
+        select(Question)
+        .join(TestQuestion, TestQuestion.question_id == Question.id)
+        .where(TestQuestion.session_id == session_id)
+        .options(
+            sel(Question.options),
+            sel(Question.concept).selectinload(Concept.topic).selectinload(Topic.chapter).selectinload(Chapter.subject)
+        )
+        .order_by(TestQuestion.order_index.asc())
+    )
+    q_res = await db.execute(q_stmt)
+    loaded_questions = list(q_res.scalars().all())
 
     sanitized_questions = [
         QuestionSelectionEngine.format_question_for_student_runner(q)
