@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://surfing-following-nothing-glenn.trycloudflare.com/api/v1';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://discount-restructuring-hawk-enhancing.trycloudflare.com/api/v1';
 
 export interface UserProfile {
   id: string;
