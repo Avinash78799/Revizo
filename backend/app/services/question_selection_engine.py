@@ -40,6 +40,11 @@ class QuestionSelectionEngine:
         "CHAPTER": 20,
         "SUBJECT_TEST": 30,
         "SUBJECT": 30,
+        "PYQ_PATTERN_TEST": 20,
+        "PYQ_PATTERN": 20,
+        "NEET_PG_PATTERN_TEST": 20,
+        "GRAND_TEST": 50,
+        "GRAND": 50,
         "CUSTOM_TEST": 10,
         "CUSTOM": 10,
         "FIVE_MINUTE_REVISION": 10,
@@ -53,7 +58,7 @@ class QuestionSelectionEngine:
         db: AsyncSession,
         user_id: str,
         mode: str,
-        question_count: int = 10,
+        question_count: int = 20,
         subject_id: Optional[str] = None,
         chapter_id: Optional[str] = None,
         topic_id: Optional[str] = None,
@@ -62,7 +67,7 @@ class QuestionSelectionEngine:
         """
         Executes blueprint-aware question selection with anti-repeat and evidence-based override tracking.
         Guarantees:
-        - Exact test length between 10 and 30 questions.
+        - Exact test length between 10 and 50 questions (Supported sizes: 10, 15, 20, 30, 50).
         - Zero development seeds, zero duplicates.
         - Clear availability error if insufficient approved questions exist.
         Returns: (selected_questions, selection_override_reason)
@@ -74,12 +79,12 @@ class QuestionSelectionEngine:
 
         # Apply mode-specific default only if count is completely omitted (None)
         if question_count is None:
-            question_count = cls.DEFAULT_COUNTS_BY_MODE.get(mode_upper, 10)
+            question_count = cls.DEFAULT_COUNTS_BY_MODE.get(mode_upper, 20)
 
-        # Enforce server-authoritative 10–30 question bounds
-        if question_count < 10 or question_count > 30:
+        # Enforce server-authoritative 10–50 question bounds
+        if question_count < 10 or question_count > 50:
             raise ValidationError(
-                f"INVALID_TEST_LENGTH: Normal student practice tests must contain between 10 and 30 questions. Requested: {question_count}."
+                f"INVALID_TEST_LENGTH: Normal student practice tests must contain between 10 and 50 questions. Supported: 10, 15, 20, 30, 50. Requested: {question_count}."
             )
 
         # 1. Fetch Student Encounter History for Anti-Repeat

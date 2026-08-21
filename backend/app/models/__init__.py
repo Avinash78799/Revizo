@@ -26,6 +26,8 @@ from app.models.learning import (
 from app.models.ai import AIGeneration, AIValidationResult
 from app.models.audit import AuditLog
 
+from app.models.historical_provenance import HistoricalProvenanceRecord, ProvenanceClassification
+
 __all__ = [
     "Base",
     "User",
@@ -37,6 +39,8 @@ __all__ = [
     "Source",
     "SourceVersion",
     "PyqReference",
+    "HistoricalProvenanceRecord",
+    "ProvenanceClassification",
     "Question",
     "QuestionOption",
     "QuestionVersion",

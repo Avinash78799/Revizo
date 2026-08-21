@@ -9,7 +9,8 @@ from app.api.v1.endpoints import (
     admin,
     reports,
     governance,
-    ai_intelligence
+    ai_intelligence,
+    historical_patterns
 )
 
 api_router = APIRouter()
@@ -22,6 +23,7 @@ api_router.include_router(questions.router, prefix="/questions", tags=["Student 
 api_router.include_router(revision.router, prefix="/revision", tags=["Spaced Revision"])
 api_router.include_router(student.router, prefix="/student", tags=["Student Intelligence"])
 api_router.include_router(student.router, prefix="", tags=["Dashboard Root"])
+api_router.include_router(historical_patterns.router, prefix="/historical-patterns", tags=["PYQ Patterns & Recall Analytics"])
 api_router.include_router(admin.router, prefix="/admin", tags=["Admin & Review Queue"])
 api_router.include_router(reports.router, prefix="/reports", tags=["Question Reports"])
 api_router.include_router(reports.router, prefix="/governance", tags=["Question Reports (Governance Alias)"])

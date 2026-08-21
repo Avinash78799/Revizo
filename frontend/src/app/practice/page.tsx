@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiRequest, SubjectTree, Chapter, Topic, TestSession } from '@/lib/api';
 import {
@@ -292,7 +293,7 @@ export default function PracticePage() {
           <div className="flex items-center gap-3">
             <span className="text-xs font-bold text-slate-700">Question Count:</span>
             <div className="flex gap-1.5">
-              {[10, 15, 20, 25, 30].map((num) => (
+              {[10, 15, 20, 30, 50].map((num) => (
                 <button
                   key={num}
                   type="button"
@@ -321,6 +322,41 @@ export default function PracticePage() {
         </div>
       </div>
 
+      {/* 🟣 New Feature: PYQ Patterns & Recall Intelligence Banner */}
+      <div className="rounded-2xl border-2 border-purple-200 bg-purple-50/60 p-6 space-y-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-600 text-white shrink-0 shadow-sm">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-800 uppercase tracking-wider bg-purple-100 px-2 py-0.5 rounded-full mb-1">
+                New Module
+              </div>
+              <h3 className="text-base font-bold text-purple-950">NEET-PG PYQ Patterns & Recall Practice</h3>
+              <p className="text-xs text-purple-800 mt-0.5">
+                Practice original clinical questions modeled on recurring 2018–2025 exam trends & multi-source recalls.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Link
+              href="/practice/pyq-patterns"
+              className="rounded-xl bg-purple-700 px-5 py-2.5 text-xs font-bold text-white hover:bg-purple-800 shadow transition-colors"
+            >
+              Start Pattern Test &rarr;
+            </Link>
+            <Link
+              href="/analytics/historical-trends"
+              className="rounded-xl border border-purple-300 bg-white px-4 py-2.5 text-xs font-bold text-purple-900 hover:bg-purple-50 transition-colors"
+            >
+              Trends
+            </Link>
+          </div>
+        </div>
+      </div>
+
       {/* 🔒 Official PYQ Integrity Notice */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-6 space-y-3">
         <div className="flex items-center gap-2">
@@ -329,11 +365,11 @@ export default function PracticePage() {
           </div>
           <div>
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Official Past Year Papers (PYQ)</h3>
-            <p className="text-[11px] text-slate-500">Temporarily Locked &bull; Zero Fabricated Memory Recalls</p>
+            <p className="text-[11px] text-slate-500">Temporarily Locked &bull; 0 Verified &bull; Strict Zero Invariant</p>
           </div>
         </div>
         <p className="text-xs text-slate-600 leading-relaxed">
-          Revizo upholds strict medical accuracy standards. All 869 questions currently live are verified against standard medical textbooks (Harrison, Bailey & Love, Robbins, Park, etc.). We do not publish unverified memory recalls.
+          Revizo upholds strict medical accuracy standards. All 869 questions currently live are verified against standard medical textbooks (Harrison, Bailey & Love, Robbins, Park, etc.). We do not publish unverified memory recalls as official exam papers.
         </p>
       </div>
     </div>
