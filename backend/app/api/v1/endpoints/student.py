@@ -251,6 +251,38 @@ async def create_misconception_retest(
     }
 
 
+@router.post("/questions/{question_id}/similar")
+async def start_similar_question_test(
+    question_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Feature 9: Similar Question Engine.
+    Creates a 1-question targeted practice session sharing the same concept/topic.
+    """
+    stmt_orig = select(Question).options(selectinload(Question.concept)).where(Question.id == question_id)
+    res_orig = await db.execute(stmt_orig)
+    orig_q = res_orig.scalars().first()
+    if not orig_q:
+        raise NotFoundError("Question")
+
+    topic_id = orig_q.concept.topic_id if orig_q.concept else None
+    test_session, loaded_questions = await TestService.create_test_session(
+        db=db,
+        user_id=current_user.id,
+        mode="TOPIC_TEST",
+        topic_id=topic_id,
+        question_count=1
+    )
+    return {
+        "session_id": test_session.id,
+        "total_questions": test_session.total_questions,
+        "mode": test_session.mode,
+        "concept_name": orig_q.concept.name if orig_q.concept else "Medical Concept"
+    }
+
+
 class BookmarkRequest(BaseModel):
     question_id: str
     notes: Optional[str] = None

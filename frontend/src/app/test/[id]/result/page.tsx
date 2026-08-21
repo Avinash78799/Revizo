@@ -298,7 +298,25 @@ export default function TestResultPage({ params }: { params: { id: string } }) {
             </div>
 
             {/* Footer action */}
-            <div className="flex justify-end pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const session = await apiRequest<{ session_id: string }>(`/student/questions/${q.question_id}/similar`, {
+                      method: 'POST',
+                    });
+                    window.location.href = `/test/${session.session_id}`;
+                  } catch {
+                    alert('Failed to launch similar practice question');
+                  }
+                }}
+                className="flex items-center gap-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-xs font-bold text-slate-800 transition-colors"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-brand-600" />
+                Practice Similar MCQ
+              </button>
+
               <button
                 onClick={() => setReportingQuestionId(q.question_id)}
                 className="flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-rose-600 transition-colors"

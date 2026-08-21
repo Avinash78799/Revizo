@@ -113,6 +113,12 @@ class QuestionSelectionEngine:
         # 2. Build Mode-Specific Question Query
         res_all = await db.execute(base_query)
         candidate_pool = list(res_all.scalars().all())
+
+        if not candidate_pool:
+            raise ValidationError(
+                f"INSUFFICIENT_CONTENT: No eligible questions found matching the requested mode '{mode}'. Content pool is empty."
+            )
+
         for q in candidate_pool:
             q._is_broadened_pool = False
             q._scope_note = None
@@ -130,20 +136,22 @@ class QuestionSelectionEngine:
                     Question.id.notin_(existing_ids)
                 )
             )
-            if subject_id:
-                fallback_query = fallback_query.join(Concept, Question.concept_id == Concept.id).join(Topic, Concept.topic_id == Topic.id).join(Chapter, Topic.chapter_id == Chapter.id).where(Chapter.subject_id == subject_id)
-            res_fallback = await db.execute(fallback_query)
-            additional_candidates = res_fallback.scalars().all()
-            for q in additional_candidates:
-                q._is_broadened_pool = True
-                s_name = q.concept.topic.chapter.subject.name if (q.concept and q.concept.topic and q.concept.topic.chapter and q.concept.topic.chapter.subject) else "Related Subject"
-                q._scope_note = f"From: {s_name} (Topic pool exhausted)"
-            candidate_pool.extend(additional_candidates)
 
-        if not candidate_pool:
-            raise ValidationError(
-                f"INSUFFICIENT_CONTENT: No eligible questions found matching the requested mode '{mode}'. Content pool is empty."
-            )
+            resolved_subject_id = subject_id
+            if not resolved_subject_id and candidate_pool:
+                first_c = candidate_pool[0].concept
+                if first_c and first_c.topic and first_c.topic.chapter:
+                    resolved_subject_id = first_c.topic.chapter.subject_id
+
+            if resolved_subject_id:
+                fallback_query = fallback_query.join(Concept, Question.concept_id == Concept.id).join(Topic, Concept.topic_id == Topic.id).join(Chapter, Topic.chapter_id == Chapter.id).where(Chapter.subject_id == resolved_subject_id)
+                res_fallback = await db.execute(fallback_query)
+                additional_candidates = res_fallback.scalars().all()
+                for q in additional_candidates:
+                    q._is_broadened_pool = True
+                    s_name = q.concept.topic.chapter.subject.name if (q.concept and q.concept.topic and q.concept.topic.chapter and q.concept.topic.chapter.subject) else "Related Subject"
+                    q._scope_note = f"From: {s_name} (Topic pool exhausted)"
+                candidate_pool.extend(additional_candidates)
 
         # 3. Apply Anti-Repeat Protection (overridden by M6 evidence or explicit retests)
         allow_repeat = selection_override_reason != "NONE"
