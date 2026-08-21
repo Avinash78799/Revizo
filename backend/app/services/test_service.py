@@ -258,7 +258,11 @@ class TestService:
         correct_opt = res_opt.scalars().first()
         is_correct = bool(correct_opt and correct_opt.option_key == selected_option_key)
 
-        stmt_q = select(Question).options(selectinload(Question.options), selectinload(Question.concept)).where(Question.id == question_id)
+        stmt_q = select(Question).options(
+            selectinload(Question.options),
+            selectinload(Question.concept),
+            selectinload(Question.source)
+        ).where(Question.id == question_id)
         res_q = await db.execute(stmt_q)
         question = res_q.scalars().first()
         if not question:
@@ -340,6 +344,11 @@ class TestService:
         correct_explanation_val = question.correct_explanation
         remember_takeaway_val = question.remember_takeaway
         exam_connection_val = question.exam_connection
+        if question.source:
+            source_title = question.source.title
+            source_ed = question.source.edition_or_year or question.source.edition or "Standard Edition"
+            source_ref = question.source.reference_identifier or question.source.publisher or "NMC Reference"
+            exam_connection_val = f"{source_title} ({source_ed}), Ref: {source_ref}"
         detailed_explanation_val = question.detailed_explanation
         concept_id_val = question.concept_id
         concept_name_val = question.concept.name if question.concept else "Medical Concept"

@@ -194,6 +194,9 @@ export interface MistakeItem {
   remember_takeaway: string;
   confidence: string;
   is_danger_zone: boolean;
+  time_spent_seconds?: number;
+  time_trap_tag?: string;
+  time_trap_type?: 'quick_gap' | 'overthinking' | 'reasoning';
   answered_at: string;
 }
 

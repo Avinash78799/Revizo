@@ -134,9 +134,30 @@ async def get_mistakes(
     res = await db.execute(stmt)
     mistakes = res.scalars().all()
 
-    return [
-        {
+    # Load attempts for response time trap signal
+    results = []
+    for m in mistakes:
+        stmt_att = select(TestAttempt).where(
+            and_(TestAttempt.user_id == current_user.id, TestAttempt.question_id == m.question_id)
+        ).order_by(TestAttempt.created_at.desc()).limit(1)
+        res_att = await db.execute(stmt_att)
+        latest_att = res_att.scalars().first()
+        time_spent = latest_att.time_spent_seconds if latest_att else 20
+
+        # Time-trap classification: Knowledge Gap (<15s) vs Overthinking Trap (>45s) vs Misconception
+        if time_spent <= 15:
+            trap_tag = "Knowledge Gap (Quick Guess)"
+            trap_type = "quick_gap"
+        elif time_spent >= 45:
+            trap_tag = "Overthinking Trap (>45s)"
+            trap_type = "overthinking"
+        else:
+            trap_tag = "Misconception / Reasoning"
+            trap_type = "reasoning"
+
+        results.append({
             "id": m.id,
+            "attempt_id": latest_att.id if latest_att else m.id,
             "question_id": m.question_id,
             "concept_id": m.concept_id,
             "concept_name": m.concept.name if m.concept else "Concept",
@@ -145,14 +166,21 @@ async def get_mistakes(
             "remember_takeaway": m.question.remember_takeaway if m.question else "",
             "selected_option_key": m.selected_option_key,
             "correct_option_key": m.correct_option_key,
+            "confidence": m.confidence_level,
             "confidence_level": m.confidence_level,
+            "is_danger_zone": m.confidence_level == "DEFINITELY_KNOW",
             "error_type": m.error_type,
             "status": m.status,
             "occurrence_count": m.occurrence_count,
+            "time_spent_seconds": time_spent,
+            "time_trap_tag": trap_tag,
+            "time_trap_type": trap_type,
+            "answered_at": m.last_occurred_at.isoformat(),
             "last_occurred_at": m.last_occurred_at.isoformat()
-        }
-        for m in mistakes
-    ]
+        })
+
+    return results
+
 
 @router.get("/mastery", response_model=List[ConceptMasterySummary])
 async def get_mastery(

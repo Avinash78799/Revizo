@@ -99,15 +99,25 @@ export default function MistakeBankPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {m.time_trap_tag && (
+                    <span
+                      className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+                        m.time_trap_type === 'overthinking'
+                          ? 'bg-purple-100 text-purple-800'
+                          : m.time_trap_type === 'quick_gap'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {m.time_trap_tag}
+                    </span>
+                  )}
                   {m.is_danger_zone && (
                     <span className="flex items-center gap-1 rounded bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">
                       <AlertOctagon className="h-3 w-3" />
                       Danger Zone
                     </span>
                   )}
-                  <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 font-medium">
-                    Confidence: {m.confidence}
-                  </span>
                 </div>
               </div>
 
