@@ -113,6 +113,7 @@ async def submit_answer_legacy(
     return result
 
 @router.post("/{session_id}/submit")
+@router.post("/{session_id}/complete")
 async def submit_and_complete_test(
     session_id: str,
     current_user: User = Depends(get_current_user),
