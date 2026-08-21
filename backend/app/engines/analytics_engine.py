@@ -126,18 +126,24 @@ class AnalyticsEngine:
 
     @staticmethod
     async def get_danger_zone_items(session: AsyncSession, user_id: str) -> list[DangerZoneItem]:
-        stmt = select(StudentConceptMastery).where(
+        from app.models.learning import StudentMistakeRecord
+
+        # 1. Overconfidence errors (high_confidence_wrong_count > 0)
+        stmt_mastery = select(StudentConceptMastery).where(
             and_(
                 StudentConceptMastery.user_id == user_id,
                 StudentConceptMastery.high_confidence_wrong_count > 0
             )
         ).order_by(StudentConceptMastery.high_confidence_wrong_count.desc())
-        res = await session.execute(stmt)
-        records = res.scalars().all()
+        res_mastery = await session.execute(stmt_mastery)
+        records_mastery = res_mastery.scalars().all()
 
         items: list[DangerZoneItem] = []
-        for r in records:
-            if r.concept:
+        seen_concepts = set()
+
+        for r in records_mastery:
+            if r.concept and r.concept_id not in seen_concepts:
+                seen_concepts.add(r.concept_id)
                 topic_name = r.concept.topic.name if r.concept.topic else "Topic"
                 subject_name = r.concept.topic.chapter.subject.name if (r.concept.topic and r.concept.topic.chapter and r.concept.topic.chapter.subject) else "Subject"
                 items.append(DangerZoneItem(
@@ -147,6 +153,71 @@ class AnalyticsEngine:
                     subject_name=subject_name,
                     high_confidence_wrong_count=r.high_confidence_wrong_count,
                     last_practiced_at=r.last_practiced_at,
-                    clinical_pearl=r.concept.clinical_pearl
+                    clinical_pearl=r.concept.clinical_pearl,
+                    trigger_reason="Overconfidence Misconception (Wrong with 100% confidence)",
+                    trigger_type="overconfidence",
+                    occurrence_count=r.high_confidence_wrong_count
                 ))
+
+        # 2. Repeated concept mistakes (occurrence_count >= 2)
+        stmt_mistakes = select(StudentMistakeRecord).where(
+            and_(
+                StudentMistakeRecord.user_id == user_id,
+                StudentMistakeRecord.occurrence_count >= 2
+            )
+        ).order_by(StudentMistakeRecord.occurrence_count.desc())
+        res_mistakes = await session.execute(stmt_mistakes)
+        records_mistakes = res_mistakes.scalars().all()
+
+        for m in records_mistakes:
+            if m.concept and m.concept_id not in seen_concepts:
+                seen_concepts.add(m.concept_id)
+                topic_name = m.concept.topic.name if m.concept.topic else "Topic"
+                subject_name = m.concept.topic.chapter.subject.name if (m.concept.topic and m.concept.topic.chapter and m.concept.topic.chapter.subject) else "Subject"
+                items.append(DangerZoneItem(
+                    concept_id=m.concept_id,
+                    concept_name=m.concept.name,
+                    topic_name=topic_name,
+                    subject_name=subject_name,
+                    high_confidence_wrong_count=0,
+                    last_practiced_at=m.last_occurred_at,
+                    clinical_pearl=m.concept.clinical_pearl,
+                    trigger_reason=f"Repeated Active Recall Failure (Missed {m.occurrence_count} times)",
+                    trigger_type="repeated_mistake",
+                    occurrence_count=m.occurrence_count
+                ))
+
+        # 3. Slow-response overthinking traps (>45s)
+        stmt_slow = select(TestAttempt).where(
+            and_(
+                TestAttempt.user_id == user_id,
+                TestAttempt.is_correct == False,
+                TestAttempt.time_spent_seconds >= 45
+            )
+        ).order_by(TestAttempt.time_spent_seconds.desc()).limit(10)
+        res_slow = await session.execute(stmt_slow)
+        records_slow = res_slow.scalars().all()
+
+        for s in records_slow:
+            if s.concept_id and s.concept_id not in seen_concepts:
+                from app.models.taxonomy import Concept
+                res_c = await session.execute(select(Concept).where(Concept.id == s.concept_id))
+                c_obj = res_c.scalars().first()
+                if c_obj:
+                    seen_concepts.add(s.concept_id)
+                    topic_name = c_obj.topic.name if c_obj.topic else "Topic"
+                    subject_name = c_obj.topic.chapter.subject.name if (c_obj.topic and c_obj.topic.chapter and c_obj.topic.chapter.subject) else "Subject"
+                    items.append(DangerZoneItem(
+                        concept_id=s.concept_id,
+                        concept_name=c_obj.name,
+                        topic_name=topic_name,
+                        subject_name=subject_name,
+                        high_confidence_wrong_count=0,
+                        last_practiced_at=s.answered_at,
+                        clinical_pearl=c_obj.clinical_pearl,
+                        trigger_reason=f"Overthinking Trap (>45s response hesitation: {s.time_spent_seconds}s)",
+                        trigger_type="overthinking_trap",
+                        occurrence_count=1
+                    ))
+
         return items

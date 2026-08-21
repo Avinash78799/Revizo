@@ -161,6 +161,9 @@ export interface DangerZoneItem {
   high_confidence_wrong_count: number;
   last_practiced_at: string;
   clinical_pearl?: string;
+  trigger_reason?: string;
+  trigger_type?: 'overconfidence' | 'repeated_mistake' | 'overthinking_trap';
+  occurrence_count?: number;
 }
 
 export interface WeakAreaItem {

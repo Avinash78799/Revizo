@@ -25,6 +25,9 @@ class DangerZoneItem(BaseModel):
     high_confidence_wrong_count: int
     last_practiced_at: datetime
     clinical_pearl: Optional[str] = None
+    trigger_reason: Optional[str] = "Overconfidence Error (Wrong with 100% confidence)"
+    trigger_type: Optional[str] = "overconfidence"
+    occurrence_count: int = 1
 
 class DashboardResponse(BaseModel):
     todays_practice_count: int

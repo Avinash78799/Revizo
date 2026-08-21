@@ -107,9 +107,19 @@ export default function DangerZonePage() {
                   <h2 className="text-sm font-bold text-slate-900 mt-0.5">{item.concept_name}</h2>
                 </div>
 
-                <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-800">
-                  {item.high_confidence_wrong_count} High-Confidence Error(s)
-                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                      item.trigger_type === 'repeated_mistake'
+                        ? 'bg-amber-100 text-amber-800'
+                        : item.trigger_type === 'overthinking_trap'
+                        ? 'bg-purple-100 text-purple-800'
+                        : 'bg-rose-100 text-rose-800'
+                    }`}
+                  >
+                    {item.trigger_reason || `${item.high_confidence_wrong_count} High-Confidence Error(s)`}
+                  </span>
+                </div>
               </div>
 
               {item.clinical_pearl && (
