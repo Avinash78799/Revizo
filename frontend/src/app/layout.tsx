@@ -1,11 +1,14 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/lib/auth-context';
-import { Navbar } from '@/components/Navbar';
+import Navbar from '@/components/Navbar';
+import Footer from '@/components/Footer';
+import MobileNav from '@/components/MobileNav';
 
 export const metadata: Metadata = {
-  title: 'NEET-PG Pro — Medical Practice & Spaced Revision',
-  description: 'Free, trustworthy, AI-assisted practice and spaced revision platform for NEET-PG aspirants.',
+  title: 'Revizo — Turn Every Mistake Into Mastery | Intelligent Medical Revision',
+  description:
+    'Medically reviewed NEET-PG practice, adaptive spaced revision, mistake intelligence, and evidence-backed explanations.',
 };
 
 export default function RootLayout({
@@ -15,10 +18,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full">
-      <body className="flex min-h-full flex-col bg-slate-50 text-slate-900">
+      <body className="flex min-h-full flex-col bg-slate-50 text-slate-900 antialiased font-sans">
         <AuthProvider>
           <Navbar />
-          <main className="flex-1">{children}</main>
+          <main className="flex-1 pb-16 md:pb-8">{children}</main>
+          <MobileNav />
+          <Footer />
         </AuthProvider>
       </body>
     </html>

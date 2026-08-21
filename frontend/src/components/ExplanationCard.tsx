@@ -1,116 +1,184 @@
 'use client';
 
-import React from 'react';
-import { CheckCircle, XCircle, AlertOctagon, Lightbulb, BookmarkCheck, BookOpen } from 'lucide-react';
-import { EvaluationResult } from '@/lib/api';
+import React, { useState } from 'react';
+import { EvaluationResult, SanitizedQuestion } from '@/lib/api';
+import {
+  CheckCircle2,
+  XCircle,
+  HelpCircle,
+  Sparkles,
+  BookOpen,
+  Flag,
+  AlertOctagon,
+  Calendar,
+  Layers,
+  Repeat,
+} from 'lucide-react';
+import ReportQuestionModal from './ReportQuestionModal';
 
-interface ExplanationCardProps {
+export interface ExplanationCardProps {
+  question?: SanitizedQuestion;
   result: EvaluationResult;
-  onRetest?: () => void;
+  onNext?: () => void;
+  onRetest?: () => void | Promise<void>;
   onReport?: () => void;
 }
 
-export function ExplanationCard({ result, onRetest, onReport }: ExplanationCardProps) {
+export function ExplanationCard({ question, result, onNext, onRetest, onReport }: ExplanationCardProps) {
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+
+  const handleOpenReport = () => {
+    if (onReport) {
+      onReport();
+    } else {
+      setIsReportModalOpen(true);
+    }
+  };
+
   return (
-    <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      {/* 1. Status Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-        <div className="flex items-center gap-2">
-          {result.is_correct ? (
-            <div className="flex items-center gap-1.5 text-emerald-700 font-bold text-sm">
-              <CheckCircle className="h-5 w-5 text-emerald-600" />
-              Correct Answer (Option {result.correct_option_key})
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-6 animate-in fade-in duration-150">
+      {/* Header Status */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+        <div className="flex items-center gap-3">
+          <div
+            className={`flex h-10 w-10 items-center justify-center rounded-xl font-bold text-white shadow-sm ${
+              result.is_correct ? 'bg-emerald-600' : 'bg-rose-600'
+            }`}
+          >
+            {result.is_correct ? <CheckCircle2 className="h-6 w-6" /> : <XCircle className="h-6 w-6" />}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span
+                className={`text-xs font-black uppercase tracking-wider ${
+                  result.is_correct ? 'text-emerald-700' : 'text-rose-700'
+                }`}
+              >
+                {result.is_correct ? '+4 Correct Answer' : '-1 Incorrect Submission'}
+              </span>
+              {result.is_danger_zone_item && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">
+                  <AlertOctagon className="h-3 w-3 text-rose-600" />
+                  Danger Zone
+                </span>
+              )}
             </div>
-          ) : (
-            <div className="flex items-center gap-1.5 text-rose-700 font-bold text-sm">
-              <XCircle className="h-5 w-5 text-rose-600" />
-              Incorrect (You selected Option {result.selected_option_key})
-            </div>
-          )}
+            <p className="text-xs font-semibold text-slate-800 mt-0.5">
+              Your Answer:{' '}
+              <span className="font-mono font-bold">
+                Option {result.selected_option_key || 'Skipped'}
+              </span>{' '}
+              &bull; Correct Key:{' '}
+              <span className="font-mono font-bold text-emerald-700">Option {result.correct_option_key}</span>
+            </p>
+          </div>
         </div>
 
-        {result.is_danger_zone_item && (
-          <div className="flex items-center gap-1 rounded bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-800">
-            <AlertOctagon className="h-3.5 w-3.5" />
-            Danger Zone Triggered
+        {/* Spaced Interval Badge */}
+        <div className="flex items-center gap-2">
+          <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+            <Calendar className="h-3.5 w-3.5 text-brand-600" />
+            <span>Next Review: in {result.revision_interval_days} {result.revision_interval_days === 1 ? 'day' : 'days'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Structured 4-Part Explanation Breakdown */}
+      <div className="space-y-4">
+        {/* Section 1: Why Selected Option was Wrong (if incorrect) */}
+        {!result.is_correct && result.why_selected_was_wrong && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4 space-y-1.5">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-rose-900 flex items-center gap-1.5">
+              <XCircle className="h-4 w-4 text-rose-600" />
+              Why Option {result.selected_option_key} is Wrong
+            </h4>
+            <p className="text-xs text-rose-950 leading-relaxed font-medium">
+              {result.why_selected_was_wrong}
+            </p>
+          </div>
+        )}
+
+        {/* Section 2: Why Correct Answer is Right */}
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 space-y-1.5">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-900 flex items-center gap-1.5">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            Why Option {result.correct_option_key} is Correct
+          </h4>
+          <p className="text-xs text-emerald-950 leading-relaxed font-medium">
+            {result.correct_explanation}
+          </p>
+        </div>
+
+        {/* Section 3: High-Yield Takeaway Pearl */}
+        <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-1.5">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+            <Sparkles className="h-4 w-4 text-amber-600" />
+            Remember This (High-Yield Clinical Pearl)
+          </h4>
+          <p className="text-xs text-amber-950 leading-relaxed font-semibold">
+            {result.remember_takeaway}
+          </p>
+        </div>
+
+        {/* Section 4: Authoritative Clinical Evidence Reference */}
+        {result.exam_connection && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-1">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+              <BookOpen className="h-3.5 w-3.5 text-brand-600" />
+              <span>Authoritative Clinical Evidence & Provenance</span>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed font-mono text-[11px]">
+              {result.exam_connection}
+            </p>
           </div>
         )}
       </div>
 
-      {/* 2. Why Correct */}
-      <div className="space-y-1">
-        <div className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-          <BookmarkCheck className="h-4 w-4 text-emerald-600" />
-          Why Option {result.correct_option_key} is Correct
-        </div>
-        <p className="text-sm text-slate-800 leading-relaxed bg-emerald-50/50 p-3 rounded-lg border border-emerald-100">
-          {result.correct_explanation}
-        </p>
-      </div>
-
-      {/* 3. Why Selected Distractor Was Wrong (if incorrect) */}
-      {!result.is_correct && result.why_selected_was_wrong && (
-        <div className="space-y-1">
-          <div className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-            <XCircle className="h-4 w-4 text-rose-600" />
-            Why Your Answer (Option {result.selected_option_key}) Was Wrong
-          </div>
-          <p className="text-sm text-slate-800 leading-relaxed bg-rose-50/50 p-3 rounded-lg border border-rose-100">
-            {result.why_selected_was_wrong}
-          </p>
-        </div>
-      )}
-
-      {/* 4. High-Yield Clinical Pearl */}
-      {result.remember_takeaway && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3.5 text-amber-950 space-y-1">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800 uppercase tracking-wider">
-            <Lightbulb className="h-4 w-4 text-amber-600" />
-            High-Yield Clinical Pearl (Remember)
-          </div>
-          <p className="text-xs font-medium leading-relaxed">
-            {result.remember_takeaway}
-          </p>
-        </div>
-      )}
-
-      {/* 5. Exam Connection & Textbook Context */}
-      {(result.exam_connection || result.detailed_explanation) && (
-        <div className="space-y-2 pt-2 border-t border-slate-100 text-xs text-slate-600">
-          {result.exam_connection && (
-            <p><span className="font-semibold text-slate-800">Exam Connection:</span> {result.exam_connection}</p>
-          )}
-          {result.detailed_explanation && (
-            <p className="text-slate-500 italic">{result.detailed_explanation}</p>
-          )}
-        </div>
-      )}
-
-      {/* 6. Action Footer: Retest & Report */}
-      <div className="flex items-center justify-between pt-2 text-xs">
-        <div className="text-slate-500">
-          Next revision in: <span className="font-semibold text-slate-700">{result.revision_interval_days} day(s)</span>
-        </div>
+      {/* Footer Actions */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
         <div className="flex items-center gap-3">
-          {onReport && (
-            <button
-              onClick={onReport}
-              className="text-slate-400 hover:text-slate-600 underline font-medium"
-            >
-              Report Question
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleOpenReport}
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-rose-600 transition-colors"
+          >
+            <Flag className="h-3.5 w-3.5" />
+            Report Question or Feedback
+          </button>
+
           {onRetest && (
             <button
+              type="button"
               onClick={onRetest}
-              className="flex items-center gap-1 rounded bg-slate-100 hover:bg-slate-200 px-2.5 py-1 font-semibold text-slate-700"
+              className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors"
             >
-              <BookOpen className="h-3.5 w-3.5" />
+              <Repeat className="h-3.5 w-3.5 text-brand-600" />
               Retest Concept
             </button>
           )}
         </div>
+
+        {onNext && (
+          <button
+            type="button"
+            onClick={onNext}
+            className="flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-brand-700 shadow transition-colors"
+          >
+            Next Question &rarr;
+          </button>
+        )}
       </div>
+
+      {/* Internal Question Reporting Modal (if no parent onReport handler provided) */}
+      {!onReport && question && (
+        <ReportQuestionModal
+          questionId={question.id}
+          isOpen={isReportModalOpen}
+          onClose={() => setIsReportModalOpen(false)}
+        />
+      )}
     </div>
   );
 }
+
+export default ExplanationCard;
