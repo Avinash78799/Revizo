@@ -40,7 +40,12 @@ export default function RegisterPage() {
         daily_question_goal: 10,
       });
     } catch (err: any) {
-      setError(err.message || 'Registration failed. Please try again.');
+      const msg = err.message || '';
+      if (msg.toLowerCase().includes('already exists') || msg.toLowerCase().includes('conflict')) {
+        setError('An account with this email address already exists. Please sign in with your password.');
+      } else {
+        setError(msg || 'Registration failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -55,9 +60,18 @@ export default function RegisterPage() {
         </div>
 
         {error && (
-          <div className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
-            <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
-            <span>{error}</span>
+          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+            <div className="space-y-1">
+              <span>{error}</span>
+              {error.toLowerCase().includes('already exists') && (
+                <div className="pt-1">
+                  <Link href="/login" className="font-bold text-brand-700 underline hover:text-brand-800">
+                    Click here to Sign In with your password &rarr;
+                  </Link>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
