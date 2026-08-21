@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/Skeleton';
 export default function SubjectDetailPage({ params }: { params: { id: string } }) {
   const [subject, setSubject] = useState<SubjectTree | null>(null);
   const [loading, setLoading] = useState(true);
+  const [questionCount, setQuestionCount] = useState<number>(10);
   const [startingTest, setStartingTest] = useState(false);
   const router = useRouter();
 
@@ -35,7 +36,7 @@ export default function SubjectDetailPage({ params }: { params: { id: string } }
         body: JSON.stringify({
           mode: 'topic_test',
           topic_id: topicId,
-          question_count: 5,
+          question_count: questionCount,
         }),
       });
       router.push(`/test/${session.session_id}`);
@@ -62,14 +63,35 @@ export default function SubjectDetailPage({ params }: { params: { id: string } }
         Back to All Subjects
       </Link>
 
-      <div className="border-b border-slate-200 pb-4">
-        <div className="flex items-center gap-2">
-          <span className="rounded bg-brand-50 px-2 py-0.5 text-[10px] font-bold text-brand-700 uppercase">
-            {subject.code}
-          </span>
-          <h1 className="text-2xl font-bold text-slate-900">{subject.name}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="rounded bg-brand-50 px-2 py-0.5 text-[10px] font-bold text-brand-700 uppercase">
+              {subject.code}
+            </span>
+            <h1 className="text-2xl font-bold text-slate-900">{subject.name}</h1>
+          </div>
+          <p className="text-xs text-slate-500 mt-1">{subject.description}</p>
         </div>
-        <p className="text-xs text-slate-500 mt-1">{subject.description}</p>
+
+        {/* Question Count Selector */}
+        <div className="flex items-center gap-2 rounded-xl bg-slate-100 p-1.5 border border-slate-200">
+          <span className="text-xs font-bold text-slate-700 pl-2">Questions:</span>
+          {[5, 10, 20, 30].map((num) => (
+            <button
+              key={num}
+              type="button"
+              onClick={() => setQuestionCount(num)}
+              className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                questionCount === num
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {num}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="space-y-6">

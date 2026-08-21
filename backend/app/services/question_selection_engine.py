@@ -138,10 +138,18 @@ class QuestionSelectionEngine:
             )
 
             resolved_subject_id = subject_id
-            if not resolved_subject_id and candidate_pool:
-                first_c = candidate_pool[0].concept
-                if first_c and first_c.topic and first_c.topic.chapter:
-                    resolved_subject_id = first_c.topic.chapter.subject_id
+            if not resolved_subject_id and topic_id:
+                t_stmt = select(Topic).options(selectinload(Topic.chapter)).where(Topic.id == topic_id)
+                t_res = await db.execute(t_stmt)
+                t_obj = t_res.scalars().first()
+                if t_obj and t_obj.chapter:
+                    resolved_subject_id = t_obj.chapter.subject_id
+            elif not resolved_subject_id and chapter_id:
+                c_stmt = select(Chapter).where(Chapter.id == chapter_id)
+                c_res = await db.execute(c_stmt)
+                c_obj = c_res.scalars().first()
+                if c_obj:
+                    resolved_subject_id = c_obj.subject_id
 
             if resolved_subject_id:
                 fallback_query = fallback_query.join(Concept, Question.concept_id == Concept.id).join(Topic, Concept.topic_id == Topic.id).join(Chapter, Topic.chapter_id == Chapter.id).where(Chapter.subject_id == resolved_subject_id)
