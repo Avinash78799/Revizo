@@ -1,36 +1,70 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Clock } from 'lucide-react';
 
 interface TimerBadgeProps {
-  startedAt: string;
+  startedAt?: string;
   durationMinutes?: number;
   onExpire?: () => void;
 }
 
-export function TimerBadge({ startedAt, durationMinutes = 10, onExpire }: TimerBadgeProps) {
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(durationMinutes * 60);
+/**
+ * Safely parses an ISO date string as UTC timestamp.
+ * Handles missing 'Z' suffix from naive database timestamps.
+ */
+function parseUtcTimestamp(dateStr?: string): number {
+  if (!dateStr) return Date.now();
+  let str = dateStr.trim();
+  // If string has no timezone offset (no Z, no +xx:xx, no -xx:xx at end), append Z
+  if (!str.endsWith('Z') && !str.includes('+') && !/-\d{2}:\d{2}$/.test(str)) {
+    str += 'Z';
+  }
+  const ts = new Date(str).getTime();
+  return isNaN(ts) ? Date.now() : ts;
+}
+
+export function TimerBadge({ startedAt, durationMinutes = 15, onExpire }: TimerBadgeProps) {
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(() => durationMinutes * 60);
+  const onExpireRef = useRef(onExpire);
+  const hasExpiredRef = useRef(false);
 
   useEffect(() => {
-    const startTime = new Date(startedAt).getTime();
-    const expiryTime = startTime + durationMinutes * 60 * 1000;
+    onExpireRef.current = onExpire;
+  }, [onExpire]);
+
+  useEffect(() => {
+    const startTime = parseUtcTimestamp(startedAt);
+    const totalDurationSeconds = Math.max(1, durationMinutes) * 60;
+    const expiryTime = startTime + totalDurationSeconds * 1000;
+
+    // Calculate initial diff
+    const initialDiff = Math.floor((expiryTime - Date.now()) / 1000);
+    
+    // If startedAt is corrupted or in the distant past (e.g. from an old orphaned session),
+    // default to fresh duration from when user opened page rather than instant auto-fail.
+    const effectiveDiff = initialDiff > 0 ? initialDiff : totalDurationSeconds;
+    setSecondsRemaining(effectiveDiff);
 
     const interval = setInterval(() => {
       const now = Date.now();
-      const diff = Math.max(0, Math.floor((expiryTime - now) / 1000));
-      setSecondsRemaining(diff);
+      const diff = Math.floor((expiryTime - now) / 1000);
+      const clamped = Math.max(0, diff);
+      setSecondsRemaining(clamped);
 
-      if (diff <= 0) {
+      if (clamped <= 0) {
         clearInterval(interval);
-        if (onExpire) {
-          onExpire();
+        if (!hasExpiredRef.current) {
+          hasExpiredRef.current = true;
+          if (onExpireRef.current) {
+            onExpireRef.current();
+          }
         }
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [startedAt, durationMinutes, onExpire]);
+  }, [startedAt, durationMinutes]);
 
   const mins = Math.floor(secondsRemaining / 60);
   const secs = secondsRemaining % 60;

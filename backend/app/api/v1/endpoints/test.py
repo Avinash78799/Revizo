@@ -64,6 +64,10 @@ async def start_test(
         for q in loaded_questions
     ]
 
+    started_at = test_session.started_at
+    if started_at and started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+
     return TestSessionResponse(
         session_id=test_session.id,
         user_id=test_session.user_id,
@@ -71,7 +75,7 @@ async def start_test(
         total_questions=test_session.total_questions,
         completed_questions=test_session.completed_questions,
         score=test_session.score,
-        started_at=test_session.started_at,
+        started_at=started_at,
         questions=sanitized_questions
     )
 
@@ -119,6 +123,10 @@ async def get_test_session(
         for q in loaded_questions
     ]
 
+    started_at = test_session.started_at
+    if started_at and started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+
     return TestSessionResponse(
         session_id=test_session.id,
         user_id=test_session.user_id,
@@ -126,7 +134,7 @@ async def get_test_session(
         total_questions=test_session.total_questions,
         completed_questions=test_session.completed_questions,
         score=test_session.score,
-        started_at=test_session.started_at,
+        started_at=started_at,
         questions=sanitized_questions
     )
 

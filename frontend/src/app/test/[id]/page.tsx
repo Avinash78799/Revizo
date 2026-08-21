@@ -208,7 +208,7 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
 
           <TimerBadge
             startedAt={startedAt}
-            durationMinutes={15}
+            durationMinutes={Math.max(15, Math.ceil((questions.length || 10) * 1.5))}
             onExpire={() => setShowSubmitModal(true)}
           />
 
