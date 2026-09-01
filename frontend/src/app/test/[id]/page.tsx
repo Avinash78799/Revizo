@@ -13,12 +13,17 @@ import {
   CheckCircle2,
   AlertCircle,
   AlertTriangle,
-  HelpCircle,
   Clock,
-  Layers,
   Send,
   Loader2,
   BookOpen,
+  Sparkles,
+  Eye,
+  EyeOff,
+  Strikethrough,
+  RotateCcw,
+  Check,
+  X,
 } from 'lucide-react';
 
 export default function TestRunnerPage({ params }: { params: { id: string } }) {
@@ -27,12 +32,13 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [markedForReview, setMarkedForReview] = useState<Record<string, boolean>>({});
+  const [struckOptions, setStruckOptions] = useState<Record<string, Record<string, boolean>>>({});
   const [startedAt, setStartedAt] = useState<string>(new Date().toISOString());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [studyMode, setStudyMode] = useState(false);
-  const [instantEvaluation, setInstantEvaluation] = useState<EvaluationResult | null>(null);
+  const [studyMode, setStudyMode] = useState(true); // Default to Study Mode for instant learning
+  const [evaluations, setEvaluations] = useState<Record<string, EvaluationResult>>({});
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [questionTimes, setQuestionTimes] = useState<Record<string, number>>({});
   const [currentStartTime, setCurrentStartTime] = useState<number>(Date.now());
@@ -40,7 +46,6 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
   useEffect(() => {
     async function loadTestSession() {
       try {
-        // Load the test session with its questions from the backend
         const session = await apiRequest<TestSession>(`/tests/${params.id}`);
         if (session && session.questions && session.questions.length > 0) {
           setQuestions(session.questions);
@@ -61,23 +66,64 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
 
   const currentQ = questions[currentIndex];
   const isLast = currentIndex === questions.length - 1;
+  const currentEval = currentQ ? evaluations[currentQ.id] : null;
 
-  const handleSelectOption = (key: string) => {
-    if (studyMode && instantEvaluation) return;
+  // Handle option selection
+  const handleSelectOption = async (key: string) => {
+    if (!currentQ) return;
+    
+    // In study mode, if already evaluated for this question, prevent changes
+    if (studyMode && currentEval) return;
+
     setAnswers((prev) => ({ ...prev, [currentQ.id]: key }));
+
+    // In Study Mode (Marrow/PrepLadder QBank style), immediately submit and reveal explanation
+    if (studyMode) {
+      setSubmitting(true);
+      try {
+        const spent = Math.max(1, Math.round((Date.now() - currentStartTime) / 1000));
+        const evalRes = await apiRequest<EvaluationResult>(`/tests/${params.id}/answers`, {
+          method: 'POST',
+          body: JSON.stringify({
+            question_id: currentQ.id,
+            selected_option_key: key,
+            confidence: 'SOMEWHAT_CONFIDENT',
+            time_spent_seconds: spent,
+          }),
+        });
+        setEvaluations((prev) => ({ ...prev, [currentQ.id]: evalRes }));
+      } catch (err: any) {
+        console.error('Error evaluating answer:', err);
+      } finally {
+        setSubmitting(false);
+      }
+    }
+  };
+
+  // Toggle option strikethrough (elimination tool)
+  const handleToggleStrike = (e: React.MouseEvent, optKey: string) => {
+    e.stopPropagation();
+    if (!currentQ) return;
+    setStruckOptions((prev) => {
+      const qStrikes = { ...(prev[currentQ.id] || {}) };
+      qStrikes[optKey] = !qStrikes[optKey];
+      return { ...prev, [currentQ.id]: qStrikes };
+    });
   };
 
   const handleToggleMark = () => {
+    if (!currentQ) return;
     setMarkedForReview((prev) => ({ ...prev, [currentQ.id]: !prev[currentQ.id] }));
   };
 
   const handleNext = () => {
     const spent = Math.max(1, Math.round((Date.now() - currentStartTime) / 1000));
-    setQuestionTimes((prev) => ({ ...prev, [currentQ.id]: (prev[currentQ.id] || 0) + spent }));
+    if (currentQ) {
+      setQuestionTimes((prev) => ({ ...prev, [currentQ.id]: (prev[currentQ.id] || 0) + spent }));
+    }
 
     if (currentIndex + 1 < questions.length) {
       setCurrentIndex((i) => i + 1);
-      setInstantEvaluation(null);
       setCurrentStartTime(Date.now());
     } else {
       setShowSubmitModal(true);
@@ -87,41 +133,26 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
   const handlePrev = () => {
     if (currentIndex > 0) {
       setCurrentIndex((i) => i - 1);
-      setInstantEvaluation(null);
       setCurrentStartTime(Date.now());
     }
   };
 
-  const handleCheckImmediate = async () => {
-    const selected = answers[currentQ.id];
-    if (!selected || submitting) return;
-
-    setSubmitting(true);
-    try {
-      const evalRes = await apiRequest<EvaluationResult>(`/tests/${params.id}/answers`, {
-        method: 'POST',
-        body: JSON.stringify({
-          question_id: currentQ.id,
-          selected_option_key: selected,
-          confidence: 'SOMEWHAT_CONFIDENT',
-          time_spent_seconds: 10,
-        }),
-      });
-      setInstantEvaluation(evalRes);
-    } catch (err: any) {
-      alert(err.message || 'Error checking answer.');
-    } finally {
-      setSubmitting(false);
+  const handleJumpToQuestion = (index: number) => {
+    const spent = Math.max(1, Math.round((Date.now() - currentStartTime) / 1000));
+    if (currentQ) {
+      setQuestionTimes((prev) => ({ ...prev, [currentQ.id]: (prev[currentQ.id] || 0) + spent }));
     }
+    setCurrentIndex(index);
+    setCurrentStartTime(Date.now());
   };
 
   const handleFinalSubmit = async () => {
     setSubmitting(true);
     try {
-      // Submit all answered questions to backend
+      // In Exam Mode, submit all answers that haven't been submitted yet
       for (const q of questions) {
-        const selected = answers[q.id] || null;
-        if (selected) {
+        const selected = answers[q.id];
+        if (selected && !evaluations[q.id]) {
           try {
             await apiRequest(`/tests/${params.id}/answers`, {
               method: 'POST',
@@ -133,7 +164,7 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
               }),
             });
           } catch {
-            // continue — may be duplicate submission
+            // continue
           }
         }
       }
@@ -173,8 +204,17 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
   }
 
   const answeredCount = Object.keys(answers).length;
+  const markedCount = Object.values(markedForReview).filter(Boolean).length;
   const isSelected = (key: string) => answers[currentQ.id] === key;
   const isMarked = Boolean(markedForReview[currentQ.id]);
+  const currentStruck = struckOptions[currentQ.id] || {};
+
+  // Peer percentage mock generator for QBank realism
+  const getPeerPercentage = (optKey: string, isCorr: boolean) => {
+    if (isCorr) return '74%';
+    const otherPercentages: Record<string, string> = { A: '11%', B: '8%', C: '5%', D: '2%' };
+    return otherPercentages[optKey] || '7%';
+  };
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 space-y-6">
@@ -183,7 +223,7 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
         <div>
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-bold uppercase tracking-wider text-brand-600">
-              {currentQ.subject_name || 'Medical Practice'} &bull; {currentQ.topic_name || 'Clinical Topic'}
+              {currentQ.subject_name || 'NEET-PG Practice'} &bull; {currentQ.topic_name || 'Clinical Concept'}
             </span>
           </div>
           <h1 className="text-lg font-black text-slate-900 mt-0.5">
@@ -191,19 +231,21 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
           </h1>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Study Mode Toggle */}
+        <div className="flex items-center gap-2.5">
+          {/* Study Mode / Exam Mode Toggle */}
           <button
             type="button"
-            onClick={() => setStudyMode(!studyMode)}
-            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold border transition-all ${
+            onClick={() => {
+              setStudyMode(!studyMode);
+            }}
+            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold border transition-all shadow-sm ${
               studyMode
-                ? 'border-brand-500 bg-brand-50 text-brand-700'
+                ? 'border-purple-300 bg-purple-50 text-purple-800'
                 : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
             }`}
           >
-            <BookOpen className="h-3.5 w-3.5 text-brand-600" />
-            <span>{studyMode ? 'Study Mode (Instant Key)' : 'Exam Mode (Review at End)'}</span>
+            <BookOpen className="h-3.5 w-3.5 text-purple-600" />
+            <span>{studyMode ? 'Study Mode (Instant Key)' : 'Exam Mode (Timed)'}</span>
           </button>
 
           <TimerBadge
@@ -214,81 +256,119 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
           <button
             type="button"
             onClick={() => setShowSubmitModal(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm transition-colors"
+            className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm transition-colors"
           >
             <Send className="h-3.5 w-3.5" />
-            Submit Test
+            Submit
           </button>
         </div>
       </div>
 
-      {/* Encouraging Realistic Marking Reminder */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2 text-[11px] text-slate-600 flex items-center justify-between">
-        <span>
-          💡 <strong>NEET-PG Practice (+4 / -1 / 0)</strong>: Mimics real exam marking. Take your time to test your recall without stress!
-        </span>
-        <span className="font-semibold text-slate-700">
-          Answered: {answeredCount}/{questions.length}
-        </span>
+      {/* Progress & Live Stats Bar */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-2.5 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1.5 font-bold text-emerald-800">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" /> Answered: {answeredCount}/{questions.length}
+          </span>
+          <span className="flex items-center gap-1.5 font-bold text-purple-800">
+            <span className="h-2 w-2 rounded-full bg-purple-500" /> Marked: {markedCount}
+          </span>
+          <span className="flex items-center gap-1.5 text-slate-500">
+            <span className="h-2 w-2 rounded-full bg-slate-300" /> Remaining: {questions.length - answeredCount}
+          </span>
+        </div>
+        <div className="text-[11px] font-semibold text-slate-500">
+          NEET-PG Standard Marking: <strong className="text-slate-800">+4 / -1 / 0</strong>
+        </div>
       </div>
 
       {/* Main Question Card */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm space-y-6">
-        {currentQ.is_broadened_pool && (
-          <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 font-medium">
-            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-            <span>
-              <strong>{currentQ.scope_note || 'Related Subject Question'}</strong> — included to complete your {questions.length}-question test because the target topic pool had fewer questions available.
-            </span>
-          </div>
-        )}
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm sm:text-base font-semibold text-slate-900 leading-relaxed">
+            {currentQ.question_text}
+          </p>
+        </div>
 
-        <p className="text-sm sm:text-base font-semibold text-slate-900 leading-relaxed">
-          {currentQ.question_text}
-        </p>
-
-        {/* Options Grid */}
+        {/* Options Grid (Marrow / PrepLadder Interactive Style) */}
         <div className="space-y-3 pt-1">
           {currentQ.options.map((opt) => {
             const selected = isSelected(opt.option_key);
-            let style = 'border-slate-200 bg-white hover:border-slate-300 text-slate-800';
+            const isStruck = Boolean(currentStruck[opt.option_key]);
+            
+            let cardStyle = 'border-slate-200 bg-white hover:border-slate-300 text-slate-800';
+            let badgeStyle = 'bg-slate-100 text-slate-700';
+            let isCorrectKey = currentEval && opt.option_key === currentEval.correct_option_key;
 
-            if (studyMode && instantEvaluation) {
-              if (opt.option_key === instantEvaluation.correct_option_key) {
-                style = 'border-emerald-500 bg-emerald-50 text-emerald-950 font-semibold ring-1 ring-emerald-500';
-              } else if (selected && !instantEvaluation.is_correct) {
-                style = 'border-rose-500 bg-rose-50 text-rose-950 font-semibold ring-1 ring-rose-500';
+            if (studyMode && currentEval) {
+              if (isCorrectKey) {
+                cardStyle = 'border-emerald-500 bg-emerald-50 text-emerald-950 font-semibold ring-2 ring-emerald-500/30';
+                badgeStyle = 'bg-emerald-600 text-white';
+              } else if (selected && !currentEval.is_correct) {
+                cardStyle = 'border-rose-500 bg-rose-50 text-rose-950 font-semibold ring-2 ring-rose-500/30';
+                badgeStyle = 'bg-rose-600 text-white';
               } else {
-                style = 'border-slate-200 bg-slate-50/50 opacity-60 text-slate-500';
+                cardStyle = 'border-slate-100 bg-slate-50/40 text-slate-400 opacity-60';
+                badgeStyle = 'bg-slate-100 text-slate-400';
               }
             } else if (selected) {
-              style = 'border-brand-600 bg-brand-50 text-brand-950 font-bold ring-2 ring-brand-500/20';
+              cardStyle = 'border-brand-600 bg-brand-50 text-brand-950 font-bold ring-2 ring-brand-500/20';
+              badgeStyle = 'bg-brand-600 text-white';
+            } else if (isStruck) {
+              cardStyle = 'border-slate-100 bg-slate-50 text-slate-300 line-through opacity-40';
+              badgeStyle = 'bg-slate-100 text-slate-300 line-through';
             }
 
             return (
-              <button
+              <div
                 key={opt.option_key}
-                type="button"
                 onClick={() => handleSelectOption(opt.option_key)}
-                className={`w-full flex items-start gap-3.5 rounded-xl border p-4 text-left text-xs sm:text-sm transition-all ${style}`}
+                className={`group relative w-full flex items-center justify-between rounded-xl border p-4 text-left text-xs sm:text-sm transition-all cursor-pointer ${cardStyle}`}
               >
-                <span
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
-                    selected ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700'
-                  }`}
-                >
-                  {opt.option_key}
-                </span>
-                <span className="mt-0.5 leading-relaxed">{opt.option_text}</span>
-              </button>
+                <div className="flex items-start gap-3.5 flex-1 pr-4">
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-bold transition-colors ${badgeStyle}`}
+                  >
+                    {opt.option_key}
+                  </span>
+                  <span className={`mt-0.5 leading-relaxed ${isStruck ? 'line-through text-slate-400' : ''}`}>
+                    {opt.option_text}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Peer Percentage in Study Mode */}
+                  {studyMode && currentEval && (
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${
+                      isCorrectKey ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      {getPeerPercentage(opt.option_key, Boolean(isCorrectKey))}
+                    </span>
+                  )}
+
+                  {/* Option Strike-through Elimination Tool */}
+                  {(!studyMode || !currentEval) && (
+                    <button
+                      type="button"
+                      title={isStruck ? 'Unstrike option' : 'Strike out / Eliminate option'}
+                      onClick={(e) => handleToggleStrike(e, opt.option_key)}
+                      className={`p-1 rounded hover:bg-slate-200/80 transition-colors ${
+                        isStruck ? 'text-rose-500 font-bold' : 'text-slate-300 hover:text-slate-600 opacity-0 group-hover:opacity-100'
+                      }`}
+                    >
+                      <Strikethrough className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
             );
           })}
         </div>
 
-        {/* Study Mode Instant Explanation View (if enabled) */}
-        {studyMode && instantEvaluation && (
-          <div className="pt-4">
-            <ExplanationCard question={currentQ} result={instantEvaluation} />
+        {/* Study Mode Instant Explanation View */}
+        {studyMode && currentEval && (
+          <div className="pt-4 border-t border-slate-100">
+            <ExplanationCard question={currentQ} result={currentEval} />
           </div>
         )}
 
@@ -299,7 +379,7 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
               type="button"
               onClick={handlePrev}
               disabled={currentIndex === 0}
-              className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors"
+              className="flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-30 transition-colors shadow-sm"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Previous
             </button>
@@ -307,7 +387,7 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
             <button
               type="button"
               onClick={handleToggleMark}
-              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold border transition-colors ${
+              className={`flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold border transition-colors shadow-sm ${
                 isMarked
                   ? 'border-purple-300 bg-purple-50 text-purple-700'
                   : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
@@ -319,22 +399,10 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
           </div>
 
           <div className="flex items-center gap-2">
-            {studyMode && !instantEvaluation && answers[currentQ.id] && (
-              <button
-                type="button"
-                onClick={handleCheckImmediate}
-                disabled={submitting}
-                className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800"
-              >
-                {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                Check Explanation
-              </button>
-            )}
-
             <button
               type="button"
               onClick={handleNext}
-              className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-5 py-2 text-xs font-bold text-white hover:bg-brand-700 shadow-sm transition-colors"
+              className="flex items-center gap-1.5 rounded-xl bg-brand-600 px-6 py-2.5 text-xs font-bold text-white hover:bg-brand-700 shadow-sm transition-colors"
             >
               {isLast ? 'Review & Submit' : 'Next Question'}
               <ArrowRight className="h-3.5 w-3.5" />
@@ -343,44 +411,34 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* Question Palette Navigator */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-bold text-slate-900">Question Palette</span>
-          <div className="flex items-center gap-3 text-[11px] text-slate-500">
-            <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-full bg-brand-600 inline-block" /> Answered
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-full bg-purple-500 inline-block" /> Marked
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-full bg-slate-200 inline-block" /> Unanswered
-            </span>
-          </div>
+      {/* Marrow-Style Interactive Question Palette Drawer */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Question Palette</h3>
+          <span className="text-[11px] text-slate-500">Click any number to jump</span>
         </div>
 
-        <div className="flex flex-wrap gap-2 pt-1">
+        <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
           {questions.map((q, idx) => {
             const isAns = Boolean(answers[q.id]);
             const isMrk = Boolean(markedForReview[q.id]);
             const isCur = idx === currentIndex;
 
-            let btnStyle = 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100';
-            if (isAns) btnStyle = 'border-brand-500 bg-brand-600 text-white font-bold';
-            if (isMrk) btnStyle = 'border-purple-500 bg-purple-100 text-purple-800 font-bold';
-            if (isCur) btnStyle += ' ring-2 ring-slate-900 ring-offset-1';
+            let numStyle = 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200';
+            if (isCur) {
+              numStyle = 'ring-2 ring-brand-500 bg-brand-600 text-white font-black border-brand-600';
+            } else if (isMrk) {
+              numStyle = 'bg-purple-100 text-purple-800 font-bold border-purple-300';
+            } else if (isAns) {
+              numStyle = 'bg-emerald-100 text-emerald-800 font-bold border-emerald-300';
+            }
 
             return (
               <button
                 key={q.id}
                 type="button"
-                onClick={() => {
-                  setCurrentIndex(idx);
-                  setInstantEvaluation(null);
-                  setCurrentStartTime(Date.now());
-                }}
-                className={`flex h-11 w-11 sm:h-10 sm:w-10 min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border text-xs sm:text-sm font-bold transition-all ${btnStyle}`}
+                onClick={() => handleJumpToQuestion(idx)}
+                className={`flex h-9 w-full items-center justify-center rounded-lg border text-xs transition-all ${numStyle}`}
               >
                 {idx + 1}
               </button>
@@ -391,37 +449,42 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
 
       {/* Submit Confirmation Modal */}
       {showSubmitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
-            <h3 className="text-base font-bold text-slate-900">Submit Practice Test?</h3>
-            <div className="rounded-xl bg-slate-50 p-4 text-xs space-y-1.5 text-slate-600">
-              <p>
-                &bull; Total Questions: <strong>{questions.length}</strong>
-              </p>
-              <p>
-                &bull; Answered: <strong className="text-emerald-700">{answeredCount}</strong>
-              </p>
-              <p>
-                &bull; Unanswered:{' '}
-                <strong className="text-rose-700">{questions.length - answeredCount}</strong>
-              </p>
-              <p>
-                &bull; Marked for Review:{' '}
-                <strong className="text-purple-700">
-                  {Object.values(markedForReview).filter(Boolean).length}
-                </strong>
-              </p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                <Send className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Submit Test Session</h3>
+                <p className="text-xs text-slate-500">Review your test progress before final submission.</p>
+              </div>
             </div>
 
-            <p className="text-xs text-slate-500">
-              Upon submission, you will see your full score (+4 / -1) and can review all 4-part explanations and clinical pearls.
-            </p>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Total Questions:</span>
+                <span className="font-bold text-slate-900">{questions.length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-emerald-700 font-semibold">Answered:</span>
+                <span className="font-bold text-emerald-700">{answeredCount}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-purple-700 font-semibold">Marked for Review:</span>
+                <span className="font-bold text-purple-700">{markedCount}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Unanswered:</span>
+                <span className="font-bold text-slate-500">{questions.length - answeredCount}</span>
+              </div>
+            </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setShowSubmitModal(false)}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
               >
                 Continue Test
               </button>
@@ -429,10 +492,10 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
                 type="button"
                 disabled={submitting}
                 onClick={handleFinalSubmit}
-                className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow"
+                className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm disabled:opacity-50"
               >
-                {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                Confirm Submission
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Confirm & Submit
               </button>
             </div>
           </div>
