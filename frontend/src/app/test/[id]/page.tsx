@@ -209,12 +209,7 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
   const isMarked = Boolean(markedForReview[currentQ.id]);
   const currentStruck = struckOptions[currentQ.id] || {};
 
-  // Peer percentage mock generator for QBank realism
-  const getPeerPercentage = (optKey: string, isCorr: boolean) => {
-    if (isCorr) return '74%';
-    const otherPercentages: Record<string, string> = { A: '11%', B: '8%', C: '5%', D: '2%' };
-    return otherPercentages[optKey] || '7%';
-  };
+
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 space-y-6">
@@ -337,15 +332,6 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
-                  {/* Peer Percentage in Study Mode */}
-                  {studyMode && currentEval && (
-                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${
-                      isCorrectKey ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                      {getPeerPercentage(opt.option_key, Boolean(isCorrectKey))}
-                    </span>
-                  )}
-
                   {/* Option Strike-through Elimination Tool */}
                   {(!studyMode || !currentEval) && (
                     <button

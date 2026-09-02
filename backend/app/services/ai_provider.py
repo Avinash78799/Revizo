@@ -110,13 +110,120 @@ class MockAIProvider(AIProvider):
             raw_response=json.dumps(result_payload),
             tokens_prompt=250,
             tokens_completion=90,
-            latency_ms=max(1, latency),
             estimated_cost_usd=0.00035
         )
+
+class LiveLLMAIProvider(AIProvider):
+    """
+    Live LLM AI Provider that connects to an external LLM API (OpenAI / Gemini compatible endpoint)
+    using settings.AI_API_KEY or OS environment variables.
+    """
+    def __init__(self, api_key: Optional[str] = None, api_base: Optional[str] = None):
+        import os
+        self.api_key = api_key or getattr(settings, "AI_API_KEY", None) or os.environ.get("OPENAI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+        self.api_base = api_base or os.environ.get("LLM_API_BASE", "https://api.openai.com/v1")
+
+    @property
+    def provider_name(self) -> str:
+        return "live_llm"
+
+    async def evaluate_question_structured(
+        self,
+        question_text: str,
+        options: list,
+        correct_option_key: str,
+        explanation: str,
+        source_citation: Optional[str] = None,
+        model_name: str = "gpt-4o-mini"
+    ) -> ProviderExecutionResult:
+        import httpx
+        start_time = time.time()
+
+        if not self.api_key:
+            return ProviderExecutionResult(
+                success=False,
+                raw_response="",
+                error_message="No AI_API_KEY found in settings or environment.",
+                latency_ms=0
+            )
+
+        prompt = (
+            f"You are a Senior Medical Content Inspector for NEET-PG.\n"
+            f"Evaluate this medical question for accuracy, ambiguity, and evidence-based standards:\n\n"
+            f"Question: {question_text}\n"
+            f"Options: {json.dumps(options)}\n"
+            f"Correct Key: {correct_option_key}\n"
+            f"Explanation: {explanation}\n"
+            f"Citation: {source_citation}\n\n"
+            f"Respond ONLY in valid JSON matching this exact schema:\n"
+            f"{{\n"
+            f'  "clinical_accuracy": {{"score": 0.95, "reason": "..."}},\n'
+            f'  "single_best_answer": {{"valid": true, "reason": "..."}},\n'
+            f'  "ambiguity_risk": {{"score": 0.05, "reason": "..."}},\n'
+            f'  "source_support": {{"supported": true, "reason": "..."}},\n'
+            f'  "recommendation": "PASS" // or "REVIEW_REQUIRED", "REJECT"\n'
+            f"}}\n"
+        )
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": "You are a professional medical exam reviewer."},
+                {"role": "user", "content": prompt}
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.1
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                res = await client.post(f"{self.api_base}/chat/completions", headers=headers, json=payload)
+                latency = int((time.time() - start_time) * 1000)
+
+                if res.status_code != 200:
+                    return ProviderExecutionResult(
+                        success=False,
+                        raw_response=res.text,
+                        error_message=f"HTTP {res.status_code}: {res.text}",
+                        latency_ms=latency
+                    )
+
+                data = res.json()
+                raw_text = data["choices"][0]["message"]["content"]
+                parsed_json = json.loads(raw_text)
+                parsed_output = StructuredValidationOutput(**parsed_json)
+
+                tokens_p = data.get("usage", {}).get("prompt_tokens", 0)
+                tokens_c = data.get("usage", {}).get("completion_tokens", 0)
+
+                return ProviderExecutionResult(
+                    success=True,
+                    output=parsed_output,
+                    raw_response=raw_text,
+                    tokens_prompt=tokens_p,
+                    tokens_completion=tokens_c,
+                    latency_ms=latency,
+                    estimated_cost_usd=(tokens_p * 0.00000015) + (tokens_c * 0.0000006)
+                )
+        except Exception as exc:
+            latency = int((time.time() - start_time) * 1000)
+            return ProviderExecutionResult(
+                success=False,
+                raw_response="",
+                error_message=str(exc),
+                latency_ms=latency
+            )
 
 class AIProviderRegistry:
     _providers: Dict[str, AIProvider] = {
         "mock": MockAIProvider(),
+        "live_llm": LiveLLMAIProvider(),
+        "openai": LiveLLMAIProvider(),
+        "gemini": LiveLLMAIProvider(),
     }
 
     @classmethod

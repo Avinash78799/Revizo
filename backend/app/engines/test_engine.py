@@ -27,31 +27,19 @@ class TestEngine:
     ) -> Tuple[TestSession, List[Question]]:
         """
         Creates a test session and selects eligible questions.
-        Returns the session and loaded questions.
+        Delegates question selection to the canonical QuestionSelectionEngine.
         """
-        query = select(Question).options(
-            selectinload(Question.options),
-            selectinload(Question.concept).selectinload(Concept.topic).selectinload(Topic.chapter).selectinload(Chapter.subject)
-        ).where(Question.status == "published")
+        from app.services.question_selection_engine import QuestionSelectionEngine
 
-        if topic_id:
-            query = query.join(Concept).where(Concept.topic_id == topic_id)
-        elif chapter_id:
-            query = query.join(Concept).join(Topic).where(Topic.chapter_id == chapter_id)
-        elif subject_id:
-            query = query.join(Concept).join(Topic).join(Chapter).where(Chapter.subject_id == subject_id)
-
-        query = query.order_by(func.random()).limit(question_count)
-        result = await session.execute(query)
-        questions = list(result.scalars().all())
-
-        if not questions:
-            fallback_query = select(Question).options(
-                selectinload(Question.options),
-                selectinload(Question.concept).selectinload(Concept.topic).selectinload(Topic.chapter).selectinload(Chapter.subject)
-            ).where(Question.status == "published").limit(question_count)
-            fallback_res = await session.execute(fallback_query)
-            questions = list(fallback_res.scalars().all())
+        questions, _ = await QuestionSelectionEngine.select_questions_for_test(
+            db=session,
+            user_id=user_id,
+            mode=mode,
+            question_count=question_count,
+            subject_id=subject_id,
+            chapter_id=chapter_id,
+            topic_id=topic_id
+        )
 
         if not questions:
             raise HTTPException(

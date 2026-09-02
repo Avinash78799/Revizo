@@ -270,8 +270,8 @@ class QuestionSelectionEngine:
         t_name = c.topic.name if (c and c.topic) else None
         s_name = c.topic.chapter.subject.name if (c and c.topic and c.topic.chapter and c.topic.chapter.subject) else None
 
-        # Sort options by option_key so they always display cleanly as A, B, C, D in order
-        ordered_options = sorted(list(question.options), key=lambda x: x.option_key)
+        display_options = list(question.options)
+        random.shuffle(display_options)
 
         return {
             "id": question.id,
@@ -291,7 +291,7 @@ class QuestionSelectionEngine:
                     "option_key": opt.option_key,
                     "option_text": opt.option_text
                 }
-                for opt in ordered_options
+                for opt in display_options
             ],
             "is_broadened_pool": getattr(question, "_is_broadened_pool", False),
             "scope_note": getattr(question, "_scope_note", None),
