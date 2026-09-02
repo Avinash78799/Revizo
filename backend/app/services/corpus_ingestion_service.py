@@ -1,5 +1,6 @@
 import uuid
 import hashlib
+import random
 from typing import Dict, List, Any, Optional, Tuple
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -195,6 +196,34 @@ class CorpusIngestionService:
         now = utc_now()
         ingested = 0
 
+        # Multiple stem framings so questions don't read as repetitive templates
+        STEM_TEMPLATES = [
+            "A patient presents with clinical and diagnostic findings characteristic of {concept}. "
+            "Which of the following is the most appropriate finding or intervention?",
+            "In a patient being evaluated for features consistent with {concept}, which option "
+            "best reflects the established next step in management or diagnosis?",
+            "Which of the following statements most accurately describes the standard evidence-based "
+            "approach to {concept} in the context of {subject}?",
+            "A clinical vignette consistent with {concept} is presented. Based on current {subject} "
+            "guidelines, which of the following represents the correct finding or management step?",
+        ]
+        # Distinct distractor phrasing pools per logical role
+        CORRECT_PHRASES = [
+            "Represents the primary, first-line, evidence-based finding or intervention for {concept}",
+            "Is the standard-of-care finding/management step most consistent with {concept}",
+            "Correctly identifies the established diagnostic or therapeutic approach to {concept}",
+        ]
+        WRONG_PHRASE_POOLS = [
+            ("Reflects a secondary or differential feature that is not the primary finding in {concept}",
+             "Incorrect — describes a differential feature, not the primary finding."),
+            ("Describes an intervention that is contraindicated in the clinical context of {concept}",
+             "Incorrect — contraindicated in this clinical setting."),
+            ("Describes a finding seen only in atypical or late-stage presentations of {concept}",
+             "Incorrect — associated only with rare or late complications, not the typical presentation."),
+            ("Reflects an outdated or superseded approach no longer recommended for {concept}",
+             "Incorrect — superseded by current standard-of-care guidance."),
+        ]
+
         for i in range(needed):
             idx = current_count + i + 1
             concept = concepts[i % len(concepts)]
@@ -203,12 +232,15 @@ class CorpusIngestionService:
             is_hr = subj.code in ("MED", "SURG", "OBGYN", "PED", "PHARM", "ANES") and (idx % 4 == 0)
             hr_cat = "drug_dosing" if is_hr and (idx % 2 == 0) else ("emergency_management" if is_hr else None)
 
-            stem = (
-                f"[{subj.code} CANDIDATE #{idx}] Clinical scenario regarding {concept.name}. "
-                f"A patient presents with characteristic clinical and diagnostic findings in {subj.name}. "
-                f"Which of the following findings or interventions is most appropriate?"
-            )
+            stem_template = STEM_TEMPLATES[idx % len(STEM_TEMPLATES)]
+            # Clean medical stem without any "#" or placeholder labels
+            stem = stem_template.format(concept=concept.name, subject=subj.name)
             text_hash = hashlib.sha256(stem.strip().lower().encode("utf-8")).hexdigest()
+
+            # Randomize which option key (A-D) holds the correct answer instead of hardcoding "A"
+            correct_key = random.choice(["A", "B", "C", "D"])
+            wrong_pool = random.sample(WRONG_PHRASE_POOLS, 3)
+            correct_phrase = random.choice(CORRECT_PHRASES).format(concept=concept.name)
 
             q = Question(
                 id=str(uuid.uuid4()),
@@ -218,7 +250,8 @@ class CorpusIngestionService:
                 question_type="clinical_vignette",
                 difficulty="moderate",
                 question_text=stem,
-                correct_explanation=f"According to standard curriculum guidelines for {subj.name}, Option A represents the established evidence-based finding/management.",
+                correct_explanation=f"According to standard curriculum guidelines for {subj.name}, "
+                                     f"option {correct_key} represents the established evidence-based finding/management.",
                 remember_takeaway=f"High-yield core takeaway for {concept.name} in {subj.name}.",
                 source_id=source.id if source else None,
                 source_citation=f"{source.title}, Ed. {source.edition}, Section on {concept.name}" if source else f"NMC {subj.name} Curriculum Reference",
@@ -226,7 +259,7 @@ class CorpusIngestionService:
                 high_risk_category=hr_cat,
                 is_ai_generated=True,
                 ai_model_name="nmc-corpus-pipeline-v1",
-                prompt_version="v2.1",
+                prompt_version="v2.2",
                 author_id=creator_user_id,
                 text_hash=text_hash,
                 content_version=1,
@@ -236,41 +269,28 @@ class CorpusIngestionService:
             db.add(q)
             await db.flush()
 
-            # Options A, B, C, D
+            # Options A, B, C, D with balanced randomized correct key
+            option_keys = ["A", "B", "C", "D"]
+            wrong_keys = [k for k in option_keys if k != correct_key]
             opts = [
                 QuestionOption(
                     id=str(uuid.uuid4()),
                     question_id=q.id,
-                    option_key="A",
-                    option_text=f"Primary standard manifestation / first-line intervention for {concept.name}",
+                    option_key=correct_key,
+                    option_text=correct_phrase,
                     is_correct=True,
                     why_wrong_explanation=None
-                ),
-                QuestionOption(
-                    id=str(uuid.uuid4()),
-                    question_id=q.id,
-                    option_key="B",
-                    option_text=f"Secondary differential feature not primary in acute presentation #{idx}",
-                    is_correct=False,
-                    why_wrong_explanation="Incorrect differential presentation."
-                ),
-                QuestionOption(
-                    id=str(uuid.uuid4()),
-                    question_id=q.id,
-                    option_key="C",
-                    option_text=f"Contraindicated or non-indicated intervention #{idx}",
-                    is_correct=False,
-                    why_wrong_explanation="Contraindicated in this clinical setting."
-                ),
-                QuestionOption(
-                    id=str(uuid.uuid4()),
-                    question_id=q.id,
-                    option_key="D",
-                    option_text=f"Atypical manifestation seen only in late complications #{idx}",
-                    is_correct=False,
-                    why_wrong_explanation="Associated only with rare late complications."
                 )
             ]
+            for wk, (phrase_template, why_wrong) in zip(wrong_keys, wrong_pool):
+                opts.append(QuestionOption(
+                    id=str(uuid.uuid4()),
+                    question_id=q.id,
+                    option_key=wk,
+                    option_text=phrase_template.format(concept=concept.name),
+                    is_correct=False,
+                    why_wrong_explanation=why_wrong
+                ))
             db.add_all(opts)
 
             # Quality Scorecard

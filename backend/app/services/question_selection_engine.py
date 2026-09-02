@@ -1,3 +1,4 @@
+import random
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional, Set, Tuple
 from sqlalchemy import select, and_, or_, func, desc
@@ -106,7 +107,7 @@ class QuestionSelectionEngine:
                 Question.status.in_(cls.ELIGIBLE_STATUSES),
                 Question.trust_class.in_(cls.ELIGIBLE_TRUST_CLASSES)
             )
-        )
+        ).order_by(func.random())
 
         if mode_upper in ("TOPIC_TEST", "TOPIC") and topic_id:
             base_query = base_query.join(Concept, Question.concept_id == Concept.id).where(Concept.topic_id == topic_id)
@@ -149,6 +150,9 @@ class QuestionSelectionEngine:
                 f"INSUFFICIENT_CONTENT: No eligible approved questions found matching the requested mode '{mode}'. Content pool is empty."
             )
 
+        # Defensive shuffle: guarantees non-deterministic ordering across tests
+        random.shuffle(candidate_pool)
+
         for q in candidate_pool:
             q._is_broadened_pool = False
             q._scope_note = None
@@ -181,15 +185,15 @@ class QuestionSelectionEngine:
                 if c_obj:
                     resolved_subject_id = c_obj.subject_id
 
-            if resolved_subject_id:
-                fallback_query = fallback_query.join(Concept, Question.concept_id == Concept.id).join(Topic, Concept.topic_id == Topic.id).join(Chapter, Topic.chapter_id == Chapter.id).where(Chapter.subject_id == resolved_subject_id)
+                fallback_query = fallback_query.join(Concept, Question.concept_id == Concept.id).join(Topic, Concept.topic_id == Topic.id).join(Chapter, Topic.chapter_id == Chapter.id).where(Chapter.subject_id == resolved_subject_id).order_by(func.random())
                 res_fallback = await db.execute(fallback_query)
-                additional_candidates = res_fallback.scalars().all()
+                additional_candidates = list(res_fallback.scalars().all())
                 for q in additional_candidates:
                     q._is_broadened_pool = True
                     s_name = q.concept.topic.chapter.subject.name if (q.concept and q.concept.topic and q.concept.topic.chapter and q.concept.topic.chapter.subject) else "Related Subject"
                     q._scope_note = f"From: {s_name} (Topic pool exhausted)"
                 candidate_pool.extend(additional_candidates)
+                random.shuffle(candidate_pool)
 
         # 3. Apply Anti-Repeat Protection (overridden by M6 evidence or explicit retests)
         allow_repeat = selection_override_reason != "NONE"
@@ -237,7 +241,12 @@ class QuestionSelectionEngine:
         if len(selected_ids) != len(set(selected_ids)):
             raise ValidationError("TEST_CREATION_FAILED: Duplicate questions detected during generation.")
 
-        return selected_questions[:question_count], selection_override_reason
+        # Shuffle final presentation order so concept-diversity pass ordering
+        # never becomes a predictable pattern across tests.
+        final_selection = selected_questions[:question_count]
+        random.shuffle(final_selection)
+
+        return final_selection, selection_override_reason
 
     @classmethod
     def format_question_for_student_runner(cls, question: Question) -> Dict[str, Any]:
@@ -261,6 +270,9 @@ class QuestionSelectionEngine:
         t_name = c.topic.name if (c and c.topic) else None
         s_name = c.topic.chapter.subject.name if (c and c.topic and c.topic.chapter and c.topic.chapter.subject) else None
 
+        # Sort options by option_key so they always display cleanly as A, B, C, D in order
+        ordered_options = sorted(list(question.options), key=lambda x: x.option_key)
+
         return {
             "id": question.id,
             "concept_id": question.concept_id,
@@ -279,7 +291,7 @@ class QuestionSelectionEngine:
                     "option_key": opt.option_key,
                     "option_text": opt.option_text
                 }
-                for opt in question.options
+                for opt in ordered_options
             ],
             "is_broadened_pool": getattr(question, "_is_broadened_pool", False),
             "scope_note": getattr(question, "_scope_note", None),
