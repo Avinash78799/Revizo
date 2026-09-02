@@ -35,8 +35,8 @@ class QuestionSelectionEngine:
     DEFAULT_COUNTS_BY_MODE = {
         "DAILY_SHORT_TEST": 10,
         "QUICK_TEST": 10,
-        "TOPIC_TEST": 15,
-        "TOPIC": 15,
+        "TOPIC_TEST": 10,
+        "TOPIC": 10,
         "CHAPTER_REVISION_TEST": 20,
         "CHAPTER": 20,
         "SUBJECT_TEST": 30,
@@ -83,9 +83,9 @@ class QuestionSelectionEngine:
             question_count = cls.DEFAULT_COUNTS_BY_MODE.get(mode_upper, 20)
 
         # Enforce server-authoritative 10–50 question bounds
-        if question_count < 10 or question_count > 50:
+        if question_count < 5 or question_count > 50:
             raise ValidationError(
-                f"INVALID_TEST_LENGTH: Normal student practice tests must contain between 10 and 50 questions. Supported: 10, 15, 20, 30, 50. Requested: {question_count}."
+                f"INVALID_TEST_LENGTH: Normal student practice tests must contain between 5 and 50 questions. Supported: 5, 10, 15, 20, 30, 50. Requested: {question_count}."
             )
 
         # 1. Fetch Student Encounter History for Anti-Repeat
@@ -185,6 +185,8 @@ class QuestionSelectionEngine:
                 if c_obj:
                     resolved_subject_id = c_obj.subject_id
 
+            # Execute the fallback query — this must run for BOTH topic and chapter scopes
+            if resolved_subject_id:
                 fallback_query = fallback_query.join(Concept, Question.concept_id == Concept.id).join(Topic, Concept.topic_id == Topic.id).join(Chapter, Topic.chapter_id == Chapter.id).where(Chapter.subject_id == resolved_subject_id).order_by(func.random())
                 res_fallback = await db.execute(fallback_query)
                 additional_candidates = list(res_fallback.scalars().all())
@@ -194,6 +196,7 @@ class QuestionSelectionEngine:
                     q._scope_note = f"From: {s_name} (Topic pool exhausted)"
                 candidate_pool.extend(additional_candidates)
                 random.shuffle(candidate_pool)
+
 
         # 3. Apply Anti-Repeat Protection (overridden by M6 evidence or explicit retests)
         allow_repeat = selection_override_reason != "NONE"
@@ -228,12 +231,19 @@ class QuestionSelectionEngine:
                         break
 
         # 5. Availability & Blueprint Validation
+        #    Instead of hard-failing when we have fewer than requested,
+        #    serve whatever is available as long as we have at least 5.
+        #    Only crash if truly empty or below the absolute minimum.
         if len(selected_questions) < question_count:
-            if mode_upper in ("MISTAKE_RETEST", "DANGER_ZONE_RETEST") and len(selected_questions) > 0:
-                pass
+            if len(selected_questions) >= 5:
+                # Gracefully serve the smaller set — the student gets a shorter test
+                # rather than no test at all. question_count is adjusted down.
+                question_count = len(selected_questions)
+            elif mode_upper in ("MISTAKE_RETEST", "DANGER_ZONE_RETEST") and len(selected_questions) > 0:
+                question_count = len(selected_questions)
             else:
                 raise ValidationError(
-                    f"INSUFFICIENT_CONTENT: {question_count}-question test is currently unavailable for this scope. Only {len(selected_questions)} approved questions are available."
+                    f"INSUFFICIENT_CONTENT: Not enough approved questions for this scope. Only {len(selected_questions)} available (minimum 5 required)."
                 )
 
         # 6. Defensive Duplicate Check

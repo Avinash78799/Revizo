@@ -12,11 +12,11 @@ class CreateTestSessionRequest(BaseModel):
     subject_id: Optional[str] = None
     chapter_id: Optional[str] = None
     topic_id: Optional[str] = None
-    question_count: int = Field(default=20, ge=10, le=50)
-    total_questions: Optional[int] = Field(default=None, ge=10, le=50)
+    question_count: int = Field(default=10, ge=5, le=50)
+    total_questions: Optional[int] = Field(default=None, ge=5, le=50)
 
     def get_effective_count(self) -> int:
-        if self.total_questions is not None and self.total_questions >= 10:
+        if self.total_questions is not None and self.total_questions >= 5:
             return self.total_questions
         return self.question_count
 
