@@ -138,6 +138,47 @@ export interface QuestionBreakdown {
   scope_note?: string;
 }
 
+export interface CognitiveQuadrants {
+  genius_count: number;
+  slow_correct_count: number;
+  silly_mistake_count: number;
+  sinkhole_count: number;
+  moderate_mistake_count: number;
+  silly_marks_lost: number;
+}
+
+export interface SubjectBreakdownItem {
+  subject_name: string;
+  subject_code: string;
+  total_questions: number;
+  correct_count: number;
+  incorrect_count: number;
+  time_spent_seconds: number;
+  score: number;
+  negative_marks: number;
+  accuracy_percentage: number;
+}
+
+export interface RankingInfo {
+  is_enabled: boolean;
+  rank: number;
+  cohort_size: number;
+  percentile: number;
+  projected_air: number;
+  topper_score: number;
+  average_score: number;
+  is_cohort_calibrated: boolean;
+  disclaimer: string;
+}
+
+export interface LeakyConcept {
+  concept_id: string;
+  concept_name: string;
+  subject_name: string;
+  mistakes_count: number;
+  marks_lost: number;
+}
+
 export interface TestResultData {
   session_id: string;
   mode: string;
@@ -145,7 +186,49 @@ export interface TestResultData {
   started_at: string;
   submitted_at: string | null;
   scoring: TestScoring;
+  cognitive_quadrants?: CognitiveQuadrants;
+  subject_breakdown?: SubjectBreakdownItem[];
+  leaky_concepts?: LeakyConcept[];
+  ranking?: RankingInfo;
   question_breakdowns: QuestionBreakdown[];
+}
+
+export interface TestSeriesTemplate {
+  id: string;
+  title: string;
+  mode: string;
+  question_count: number;
+  time_limit_minutes: number;
+  is_live: boolean;
+  live_window_start?: string;
+  live_window_end?: string;
+  syllabus_tag: string;
+  total_registered: number;
+  subject_id?: string;
+  subject_name?: string;
+  subject_code?: string;
+  difficulty?: string;
+  badge?: string;
+}
+
+export interface TestSeriesCatalog {
+  live_grand_tests: TestSeriesTemplate[];
+  subject_wise_tests: TestSeriesTemplate[];
+  quick_drills: TestSeriesTemplate[];
+}
+
+export interface TestHistoryItem {
+  session_id: string;
+  mode: string;
+  title: string;
+  status: string;
+  total_questions: number;
+  completed_questions: number;
+  score: number;
+  max_score: number;
+  accuracy_percentage: number;
+  started_at: string;
+  submitted_at: string | null;
 }
 
 export interface DueRevisionItem {

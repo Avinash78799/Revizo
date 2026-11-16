@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { apiRequest, SanitizedQuestion, EvaluationResult, TestSession } from '@/lib/api';
 import { ExplanationCard } from '@/components/ExplanationCard';
 import { TimerBadge } from '@/components/TimerBadge';
@@ -24,20 +24,26 @@ import {
   RotateCcw,
   Check,
   X,
+  Eraser,
+  Shield,
 } from 'lucide-react';
 
 export default function TestRunnerPage({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialStudyMode = searchParams.get('studyMode') !== 'false';
+
   const [questions, setQuestions] = useState<SanitizedQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [visitedQuestions, setVisitedQuestions] = useState<Record<string, boolean>>({});
   const [markedForReview, setMarkedForReview] = useState<Record<string, boolean>>({});
   const [struckOptions, setStruckOptions] = useState<Record<string, Record<string, boolean>>>({});
   const [startedAt, setStartedAt] = useState<string>(new Date().toISOString());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [studyMode, setStudyMode] = useState(true); // Default to Study Mode for instant learning
+  const [studyMode, setStudyMode] = useState(initialStudyMode);
   const [evaluations, setEvaluations] = useState<Record<string, EvaluationResult>>({});
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [questionTimes, setQuestionTimes] = useState<Record<string, number>>({});
@@ -50,6 +56,7 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
         if (session && session.questions && session.questions.length > 0) {
           setQuestions(session.questions);
           setStartedAt(session.started_at);
+          setVisitedQuestions({ [session.questions[0].id]: true });
         } else {
           setError('This test session contains no questions. Please start a new test.');
         }
@@ -67,6 +74,13 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
   const currentQ = questions[currentIndex];
   const isLast = currentIndex === questions.length - 1;
   const currentEval = currentQ ? evaluations[currentQ.id] : null;
+
+  // Track visited questions
+  useEffect(() => {
+    if (currentQ) {
+      setVisitedQuestions((prev) => ({ ...prev, [currentQ.id]: true }));
+    }
+  }, [currentQ]);
 
   // Handle option selection
   const handleSelectOption = async (key: string) => {
@@ -98,6 +112,16 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
         setSubmitting(false);
       }
     }
+  };
+
+  // Clear current response (important for NEET PG negative marking defense)
+  const handleClearResponse = () => {
+    if (!currentQ || (studyMode && currentEval)) return;
+    setAnswers((prev) => {
+      const next = { ...prev };
+      delete next[currentQ.id];
+      return next;
+    });
   };
 
   // Toggle option strikethrough (elimination tool)
@@ -360,7 +384,7 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
 
         {/* Controls Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handlePrev}
@@ -382,6 +406,16 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
               <Bookmark className="h-3.5 w-3.5" />
               {isMarked ? 'Marked for Review' : 'Mark for Review'}
             </button>
+
+            {Boolean(answers[currentQ.id]) && (!studyMode || !currentEval) && (
+              <button
+                type="button"
+                onClick={handleClearResponse}
+                className="flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition-colors shadow-sm"
+              >
+                <Eraser className="h-3.5 w-3.5" /> Clear Selection
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -397,26 +431,51 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* Marrow-Style Interactive Question Palette Drawer */}
+      {/* NBE-Standard Interactive Question Palette */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Question Palette</h3>
-          <span className="text-[11px] text-slate-500">Click any number to jump</span>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+              NBE Question Status Palette
+            </h3>
+            <span className="text-[11px] text-slate-500">Click any number to jump directly</span>
+          </div>
+
+          {/* Palette Legend */}
+          <div className="flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-600">
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded bg-emerald-500 inline-block" /> Answered
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded bg-rose-500 inline-block" /> Not Answered
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded bg-purple-500 inline-block" /> Marked for Review
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded bg-slate-200 inline-block" /> Not Visited
+            </span>
+          </div>
         </div>
 
         <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
           {questions.map((q, idx) => {
             const isAns = Boolean(answers[q.id]);
             const isMrk = Boolean(markedForReview[q.id]);
+            const isVis = Boolean(visitedQuestions[q.id]);
             const isCur = idx === currentIndex;
 
-            let numStyle = 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200';
+            let numStyle = 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200';
             if (isCur) {
               numStyle = 'ring-2 ring-brand-500 bg-brand-600 text-white font-black border-brand-600';
+            } else if (isMrk && isAns) {
+              numStyle = 'bg-purple-100 text-purple-900 font-black border-purple-400 relative';
             } else if (isMrk) {
               numStyle = 'bg-purple-100 text-purple-800 font-bold border-purple-300';
             } else if (isAns) {
               numStyle = 'bg-emerald-100 text-emerald-800 font-bold border-emerald-300';
+            } else if (isVis) {
+              numStyle = 'bg-rose-50 text-rose-700 font-bold border-rose-200';
             }
 
             return (
@@ -427,6 +486,9 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
                 className={`flex h-9 w-full items-center justify-center rounded-lg border text-xs transition-all ${numStyle}`}
               >
                 {idx + 1}
+                {isMrk && isAns && (
+                  <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                )}
               </button>
             );
           })}

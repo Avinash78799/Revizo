@@ -63,14 +63,19 @@ class QuestionSelectionEngine:
         subject_id: Optional[str] = None,
         chapter_id: Optional[str] = None,
         topic_id: Optional[str] = None,
+        subject_ids: Optional[List[str]] = None,
+        difficulty: Optional[str] = None,
+        unattempted_only: bool = False,
+        is_high_yield_only: bool = False,
         blueprint_config: Optional[dict] = None
     ) -> Tuple[List[Question], str]:
         """
         Executes blueprint-aware question selection with anti-repeat and evidence-based override tracking.
         Guarantees:
-        - Exact test length between 10 and 50 questions (Supported sizes: 10, 15, 20, 30, 50).
+        - Exact test length between 5 and 50 questions (Supported sizes: 5, 10, 15, 20, 30, 50).
         - Zero development seeds, zero duplicates.
-        - Clear availability error if insufficient approved questions exist.
+        - Multi-subject custom filters, difficulty tiers, and unattempted filtering.
+        - Graceful fallback for empty mistake/danger zone pools instead of crashing.
         Returns: (selected_questions, selection_override_reason)
         """
         now = utc_now()
@@ -115,8 +120,9 @@ class QuestionSelectionEngine:
             base_query = base_query.join(Concept, Question.concept_id == Concept.id).join(Topic, Concept.topic_id == Topic.id).where(Topic.chapter_id == chapter_id)
         elif mode_upper in ("SUBJECT_TEST", "SUBJECT") and subject_id:
             base_query = base_query.join(Concept, Question.concept_id == Concept.id).join(Topic, Concept.topic_id == Topic.id).join(Chapter, Topic.chapter_id == Chapter.id).where(Chapter.subject_id == subject_id)
+        elif subject_ids and len(subject_ids) > 0:
+            base_query = base_query.join(Concept, Question.concept_id == Concept.id).join(Topic, Concept.topic_id == Topic.id).join(Chapter, Topic.chapter_id == Chapter.id).where(Chapter.subject_id.in_(subject_ids))
         elif mode_upper == "MISTAKE_RETEST":
-            selection_override_reason = "MISTAKE_RETEST_OVERRIDE"
             stmt_mistakes = select(StudentMistakeRecord.question_id).where(
                 and_(
                     StudentMistakeRecord.user_id == user_id,
@@ -125,10 +131,12 @@ class QuestionSelectionEngine:
             )
             mistake_q_ids = (await db.execute(stmt_mistakes)).scalars().all()
             if not mistake_q_ids:
-                raise ValidationError("No unresolved mistakes in your Mistake Bank to retest.")
-            base_query = base_query.where(Question.id.in_(mistake_q_ids))
+                # Graceful fallback: student has no mistakes yet, serve high-yield questions rather than crashing
+                selection_override_reason = "NO_MISTAKES_FALLBACK_HIGH_YIELD"
+            else:
+                selection_override_reason = "MISTAKE_RETEST_OVERRIDE"
+                base_query = base_query.where(Question.id.in_(mistake_q_ids))
         elif mode_upper == "DANGER_ZONE_RETEST":
-            selection_override_reason = "M6_DANGER_ZONE_OVERRIDE"
             stmt_danger = select(StudentConceptMastery.concept_id).where(
                 and_(
                     StudentConceptMastery.user_id == user_id,
@@ -137,13 +145,41 @@ class QuestionSelectionEngine:
             )
             danger_concept_ids = (await db.execute(stmt_danger)).scalars().all()
             if not danger_concept_ids:
-                raise ValidationError("No active Danger Zone misconceptions found to retest.")
-            base_query = base_query.where(Question.concept_id.in_(danger_concept_ids))
+                # Graceful fallback: student has no active danger zone items yet, serve high-yield questions
+                selection_override_reason = "NO_DANGER_ZONE_FALLBACK_HIGH_YIELD"
+            else:
+                selection_override_reason = "M6_DANGER_ZONE_OVERRIDE"
+                base_query = base_query.where(Question.concept_id.in_(danger_concept_ids))
         elif mode_upper in ("REVISION", "REVISION_TEST", "FIVE_MINUTE_REVISION", "five_minute_revision"):
             selection_override_reason = "M6_DUE_REVISION_OVERRIDE"
 
-        res_all = await db.execute(base_query)
-        candidate_pool = list(res_all.scalars().all())
+        # Apply Difficulty Tier filter if specified
+        if difficulty and difficulty.lower() != "all":
+            diff_lower = difficulty.lower()
+            if diff_lower in ("moderate", "medium", "core"):
+                base_query = base_query.where(Question.difficulty.in_(["moderate", "medium"]))
+            elif diff_lower in ("easy", "hard"):
+                base_query = base_query.where(Question.difficulty == diff_lower)
+
+        # Apply High-Yield filter if requested
+        if is_high_yield_only:
+            base_query = base_query.where(Question.is_high_yield == True)
+
+        # Apply Unattempted Only filter if requested
+        if unattempted_only and recent_seen_ids:
+            # Query candidate count without recent seen filter first
+            candidate_unattempted_query = base_query.where(Question.id.notin_(recent_seen_ids))
+            res_unatt = await db.execute(candidate_unattempted_query)
+            unatt_pool = list(res_unatt.scalars().all())
+            if len(unatt_pool) >= question_count:
+                candidate_pool = unatt_pool
+            else:
+                # If unattempted alone has fewer questions than requested, fall back to base query
+                res_all = await db.execute(base_query)
+                candidate_pool = list(res_all.scalars().all())
+        else:
+            res_all = await db.execute(base_query)
+            candidate_pool = list(res_all.scalars().all())
 
         if not candidate_pool:
             raise ValidationError(

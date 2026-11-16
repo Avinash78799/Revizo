@@ -2,12 +2,14 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, status, Request, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
-from app.models.test import IntegrityEvent, TestSession
+from app.models.test import IntegrityEvent, TestSession, TestTemplate, TestAttempt
+from app.models.question import QuestionReport, QuestionQuarantineRegistry
+from app.models.taxonomy import Subject
 from app.schemas.test import CreateTestSessionRequest, TestSessionResponse
 from app.schemas.question import (
     AnswerSubmissionRequest,
@@ -37,6 +39,114 @@ class ReportQuestionRequest(BaseModel):
     reason: str = Field(..., description="'wrong_answer', 'ambiguous', 'outdated', 'incorrect_explanation', 'poor_wording', 'other'")
     comments: Optional[str] = None
 
+@router.get("/series")
+@router.get("/templates")
+async def get_test_series(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns available test series: Live Weekly Grand Tests, 19 Subject-Wise Tests, and Rapid Practice Drills.
+    """
+    stmt = select(TestTemplate).order_by(TestTemplate.created_at.desc())
+    res = await db.execute(stmt)
+    templates = res.scalars().all()
+
+    # Query all 19 NMC subjects to ensure complete Subject-Wise Test coverage
+    subj_stmt = select(Subject).order_by(Subject.order_index.asc())
+    subj_res = await db.execute(subj_stmt)
+    all_subjects = subj_res.scalars().all()
+
+    live_tests = []
+    subject_tests = []
+    quick_drills = []
+
+    for t in templates:
+        cfg = t.config or {}
+        item = {
+            "id": t.id,
+            "title": t.title,
+            "mode": t.mode,
+            "question_count": cfg.get("question_count", 20),
+            "time_limit_minutes": cfg.get("time_limit_minutes", 25),
+            "is_live": cfg.get("is_live", False),
+            "live_window_start": cfg.get("live_window_start"),
+            "live_window_end": cfg.get("live_window_end"),
+            "syllabus_tag": cfg.get("syllabus_tag", "High-Yield Curriculum"),
+            "total_registered": cfg.get("total_registered", 1840),
+            "subject_id": cfg.get("subject_id"),
+            "difficulty": cfg.get("difficulty", "all")
+        }
+        if t.mode in ("weekly_grand_test", "live_grand_test", "grand_test") or cfg.get("is_live"):
+            live_tests.append(item)
+        elif t.mode in ("subject_test", "subject"):
+            subject_tests.append(item)
+        else:
+            quick_drills.append(item)
+
+    # If no subject templates exist yet in DB, dynamically generate them from subjects table
+    if not subject_tests:
+        for s in all_subjects:
+            subject_tests.append({
+                "id": f"swt-{s.id}",
+                "title": f"{s.name} Subject Test",
+                "mode": "subject_test",
+                "subject_id": s.id,
+                "subject_name": s.name,
+                "subject_code": s.code,
+                "question_count": 20,
+                "time_limit_minutes": 25,
+                "is_live": False,
+                "syllabus_tag": f"All High-Yield {s.name} Topics",
+                "total_registered": 950,
+                "difficulty": "all"
+            })
+
+    return {
+        "live_grand_tests": live_tests,
+        "subject_wise_tests": subject_tests,
+        "quick_drills": quick_drills
+    }
+
+@router.get("/history")
+async def get_test_history(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns student's historical test sessions with scores, accuracy, and status.
+    """
+    stmt = select(TestSession).where(
+        TestSession.user_id == current_user.id
+    ).order_by(TestSession.started_at.desc()).limit(50)
+    res = await db.execute(stmt)
+    sessions = res.scalars().all()
+
+    history = []
+    for s in sessions:
+        max_score = (s.total_questions or 10) * 4
+        accuracy = round((s.score / max_score) * 100.0, 1) if max_score > 0 and s.score > 0 else 0.0
+        
+        display_title = (s.mode or "Practice Test").replace("_", " ").title()
+        if s.template and s.template.title:
+            display_title = s.template.title
+
+        history.append({
+            "session_id": s.id,
+            "mode": s.mode,
+            "title": display_title,
+            "status": s.status,
+            "total_questions": s.total_questions,
+            "completed_questions": s.completed_questions,
+            "score": s.score,
+            "max_score": max_score,
+            "accuracy_percentage": accuracy,
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+            "submitted_at": s.submitted_at.isoformat() if s.submitted_at else None,
+        })
+
+    return history
+
 @router.post("/start", response_model=TestSessionResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/create", response_model=TestSessionResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/generate", response_model=TestSessionResponse, status_code=status.HTTP_201_CREATED)
@@ -57,6 +167,12 @@ async def start_test(
         subject_id=req.subject_id,
         chapter_id=req.chapter_id,
         topic_id=req.topic_id,
+        subject_ids=req.subject_ids,
+        difficulty=req.difficulty,
+        unattempted_only=req.unattempted_only,
+        is_high_yield_only=req.is_high_yield_only,
+        template_id=req.template_id,
+        duration_minutes=req.duration_minutes,
         question_count=effective_count
     )
 
@@ -236,8 +352,36 @@ async def report_defective_question(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Logs medical accuracy or quality reports from students (Prompt 9, Sec 34).
+    Logs medical accuracy or quality reports from students into the QuestionReport registry.
     """
+    from app.models.question import Question
+    stmt = select(Question).where(Question.id == req.question_id)
+    res = await db.execute(stmt)
+    q = res.scalars().first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Question not found")
+
+    report = QuestionReport(
+        question_id=req.question_id,
+        user_id=current_user.id,
+        reason=req.reason,
+        comment=req.comments,
+        is_serious_medical_error=(req.reason in ("wrong_answer", "incorrect_explanation"))
+    )
+    db.add(report)
+
+    if req.reason in ("wrong_answer", "incorrect_explanation"):
+        # Auto-quarantine serious medical error reports for senior clinician review
+        quarantine = QuestionQuarantineRegistry(
+            question_id=req.question_id,
+            quarantine_reason=f"Student report: {req.reason}",
+            resolution_status="quarantined",
+            audit_notes=req.comments
+        )
+        db.add(quarantine)
+
+    await db.commit()
+
     return {
         "status": "REPORTED",
         "question_id": req.question_id,

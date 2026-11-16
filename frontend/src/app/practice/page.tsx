@@ -21,16 +21,21 @@ import {
   Zap,
   Target,
   Sliders,
+  CheckCircle2,
+  Shield,
 } from 'lucide-react';
 
 export default function PracticePage() {
   const router = useRouter();
   const [subjects, setSubjects] = useState<SubjectTree[]>([]);
+  const [scopeType, setScopeType] = useState<'specific' | 'all' | 'clinical' | 'pre_clinical'>('specific');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
   const [selectedChapterId, setSelectedChapterId] = useState<string>('');
   const [selectedTopicId, setSelectedTopicId] = useState<string>('');
   const [targetFocus, setTargetFocus] = useState<string>('all'); // 'all', 'high_yield', 'mistakes', 'danger_zone', 'due_revision'
-  const [difficultyTier, setDifficultyTier] = useState<string>('all'); // 'all', 'core', 'hard'
+  const [difficultyTier, setDifficultyTier] = useState<string>('all'); // 'all', 'moderate', 'hard'
+  const [unattemptedOnly, setUnattemptedOnly] = useState<boolean>(false);
+  const [runnerMode, setRunnerMode] = useState<'exam' | 'study'>('study');
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [loading, setLoading] = useState(false);
 
@@ -87,13 +92,33 @@ export default function PracticePage() {
     }
   };
 
-  const startTest = async (mode: string, subjectId?: string, count: number = 10) => {
+  const startCustomTest = async () => {
     setLoading(true);
     try {
-      let resolvedMode = mode;
-      if (selectedTopicId) resolvedMode = 'topic_test';
-      else if (selectedChapterId) resolvedMode = 'chapter_test';
-      else if (selectedSubjectId) resolvedMode = 'subject_test';
+      let resolvedMode = 'custom_practice';
+      let subjectIds: string[] | null = null;
+      let effectiveSubjectId: string | null = null;
+      let effectiveChapterId: string | null = null;
+      let effectiveTopicId: string | null = null;
+
+      if (scopeType === 'specific') {
+        effectiveSubjectId = selectedSubjectId || null;
+        effectiveChapterId = selectedChapterId || null;
+        effectiveTopicId = selectedTopicId || null;
+        if (effectiveTopicId) resolvedMode = 'topic_test';
+        else if (effectiveChapterId) resolvedMode = 'chapter_test';
+        else if (effectiveSubjectId) resolvedMode = 'subject_test';
+      } else if (scopeType === 'clinical') {
+        resolvedMode = 'grand_test';
+        const clinicalCodes = ['MED', 'SURG', 'OBGYN', 'PED', 'ORTHO', 'DERM', 'PSYCH', 'RAD', 'ANES'];
+        subjectIds = subjects.filter((s) => clinicalCodes.includes(s.code)).map((s) => s.id);
+      } else if (scopeType === 'pre_clinical') {
+        resolvedMode = 'grand_test';
+        const preCodes = ['ANAT', 'PHYS', 'BIOCH', 'PATH', 'PHARM', 'MICRO', 'FMT', 'PSM', 'ENT', 'OPHTH'];
+        subjectIds = subjects.filter((s) => preCodes.includes(s.code)).map((s) => s.id);
+      } else {
+        resolvedMode = 'grand_test';
+      }
 
       if (targetFocus === 'mistakes') resolvedMode = 'mistake_retest';
       else if (targetFocus === 'danger_zone') resolvedMode = 'danger_zone_retest';
@@ -103,16 +128,21 @@ export default function PracticePage() {
         method: 'POST',
         body: JSON.stringify({
           mode: resolvedMode,
-          subject_id: selectedSubjectId || null,
-          chapter_id: selectedChapterId || null,
-          topic_id: selectedTopicId || null,
-          question_count: count,
-          total_questions: count,
+          subject_id: effectiveSubjectId,
+          subject_ids: subjectIds,
+          chapter_id: effectiveChapterId,
+          topic_id: effectiveTopicId,
+          difficulty: difficultyTier !== 'all' ? difficultyTier : null,
+          unattempted_only: unattemptedOnly,
+          is_high_yield_only: targetFocus === 'high_yield',
+          question_count: questionCount,
+          total_questions: questionCount,
         }),
       });
-      router.push(`/test/${session.session_id}`);
+
+      router.push(`/test/${session.session_id}?studyMode=${runnerMode === 'study'}`);
     } catch (err: any) {
-      alert(err.message || 'Failed to start test session.');
+      alert(err.message || 'Failed to start custom test session.');
       setLoading(false);
     }
   };
@@ -125,9 +155,10 @@ export default function PracticePage() {
         body: JSON.stringify({
           mode: 'five_minute_revision',
           total_questions: count,
+          duration_minutes: minutes,
         }),
       });
-      router.push(`/test/${session.session_id}`);
+      router.push(`/test/${session.session_id}?studyMode=${runnerMode === 'study'}`);
     } catch (err: any) {
       alert(err.message || 'Failed to start rapid revision.');
       setLoading(false);
@@ -139,18 +170,20 @@ export default function PracticePage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Practice & Custom Test Builder</h1>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+            Practice & Custom Test Builder
+          </h1>
           <p className="text-xs sm:text-sm text-slate-600">
-            Build custom MCQ sessions by subject, topic, difficulty, or target your active mistakes and due revisions.
+            Build custom MCQ sessions by discipline, difficulty tier, or target your active mistakes and due spaced revisions.
           </p>
         </div>
         <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">
           <ShieldCheck className="h-4 w-4 text-emerald-600" />
-          869 Medically Reviewed Questions
+          Medically Verified Core QBank
         </div>
       </div>
 
-      {/* 🚀 Feature 10: Rapid Revision Sprints */}
+      {/* Rapid Timed Revision Sprints */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -190,26 +223,129 @@ export default function PracticePage() {
         </div>
       </div>
 
-      {/* 🎯 Feature 2: Advanced Custom Test Builder */}
+      {/* Advanced Custom Test Builder */}
       <div className="rounded-2xl border-2 border-brand-200 bg-white p-6 sm:p-8 shadow-sm space-y-6">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
               <Sliders className="h-4 w-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">Advanced Custom Test Builder</h2>
-              <p className="text-xs text-slate-500">Tailor question sources, discipline scope, and difficulty</p>
+              <h2 className="text-base font-bold text-slate-900">Advanced Custom Module Builder</h2>
+              <p className="text-xs text-slate-500">
+                Tailor curriculum discipline, difficulty tier, and test execution mode.
+              </p>
             </div>
           </div>
-          <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-[10px] font-bold text-brand-700">
-            Precision Practice
-          </span>
+
+          {/* Test Runner Mode Selector */}
+          <div className="flex items-center gap-2 rounded-xl bg-slate-100 p-1 border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setRunnerMode('study')}
+              className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                runnerMode === 'study'
+                  ? 'bg-brand-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Tutor Mode
+            </button>
+            <button
+              type="button"
+              onClick={() => setRunnerMode('exam')}
+              className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                runnerMode === 'exam'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Exam Mode
+            </button>
+          </div>
         </div>
 
-        {/* 1. Target Focus Filters */}
+        {/* 1. Discipline Scope Selector */}
         <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-700">Focus Target:</label>
+          <label className="text-xs font-bold text-slate-700">1. Discipline Scope:</label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { id: 'specific', label: 'Specific Subject / Topic' },
+              { id: 'clinical', label: 'Clinical Disciplines Block' },
+              { id: 'pre_clinical', label: 'Pre & Para-Clinical Block' },
+              { id: 'all', label: 'Full 19-Subject Curriculum' },
+            ].map((sc) => (
+              <button
+                key={sc.id}
+                type="button"
+                onClick={() => setScopeType(sc.id as any)}
+                className={`rounded-xl border p-2.5 text-xs font-bold transition-all text-center ${
+                  scopeType === sc.id
+                    ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                {sc.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 2. Taxonomy Selectors (Visible when 'specific' is active) */}
+        {scopeType === 'specific' && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Subject (19 Available)</label>
+              <select
+                value={selectedSubjectId}
+                onChange={(e) => handleSubjectChange(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs font-semibold text-slate-800 bg-white focus:border-brand-500 focus:outline-none"
+              >
+                {subjects.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Chapter</label>
+              <select
+                value={selectedChapterId}
+                onChange={(e) => handleChapterChange(e.target.value)}
+                disabled={availableChapters.length === 0}
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs font-semibold text-slate-800 bg-white focus:border-brand-500 focus:outline-none disabled:opacity-50"
+              >
+                {availableChapters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Topic</label>
+              <select
+                value={selectedTopicId}
+                onChange={(e) => setSelectedTopicId(e.target.value)}
+                disabled={availableTopics.length === 0}
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs font-semibold text-slate-800 bg-white focus:border-brand-500 focus:outline-none disabled:opacity-50"
+              >
+                {availableTopics.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* 3. Target Focus Filters */}
+        <div className="space-y-2">
+          <label className="text-xs font-bold text-slate-700">2. Target Focus:</label>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {[
               { id: 'all', label: 'All Questions', icon: Target },
@@ -238,62 +374,61 @@ export default function PracticePage() {
           </div>
         </div>
 
-        {/* 2. Taxonomy Selectors (Subject -> Chapter -> Topic) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">1. Discipline / Subject (19 Available)</label>
-            <select
-              value={selectedSubjectId}
-              onChange={(e) => handleSubjectChange(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 p-2.5 text-xs font-semibold text-slate-800 bg-white focus:border-brand-500 focus:outline-none"
-            >
-              {subjects.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.code})
-                </option>
+        {/* 4. Difficulty Tier & Unattempted Filter */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-700">3. Difficulty Tier:</label>
+            <div className="flex gap-2">
+              {[
+                { id: 'all', label: 'All Levels' },
+                { id: 'moderate', label: 'Core / Standard' },
+                { id: 'hard', label: 'Challenging Vignettes' },
+              ].map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => setDifficultyTier(d.id)}
+                  className={`flex-1 rounded-xl border py-2 text-xs font-bold transition-all ${
+                    difficultyTier === d.id
+                      ? 'border-brand-600 bg-brand-50 text-brand-900'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {d.label}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">2. Chapter</label>
-            <select
-              value={selectedChapterId}
-              onChange={(e) => handleChapterChange(e.target.value)}
-              disabled={availableChapters.length === 0}
-              className="w-full rounded-xl border border-slate-300 p-2.5 text-xs font-semibold text-slate-800 bg-white focus:border-brand-500 focus:outline-none disabled:opacity-50"
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-700">4. History Filter:</label>
+            <button
+              type="button"
+              onClick={() => setUnattemptedOnly(!unattemptedOnly)}
+              className={`w-full flex items-center justify-between rounded-xl border p-2.5 text-xs font-bold transition-all ${
+                unattemptedOnly
+                  ? 'border-emerald-600 bg-emerald-50 text-emerald-900 shadow-xs'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+              }`}
             >
-              {availableChapters.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700">3. Topic</label>
-            <select
-              value={selectedTopicId}
-              onChange={(e) => setSelectedTopicId(e.target.value)}
-              disabled={availableTopics.length === 0}
-              className="w-full rounded-xl border border-slate-300 p-2.5 text-xs font-semibold text-slate-800 bg-white focus:border-brand-500 focus:outline-none disabled:opacity-50"
-            >
-              {availableTopics.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
+              <span>Exclude questions attempted recently</span>
+              <div
+                className={`h-4 w-4 rounded border flex items-center justify-center ${
+                  unattemptedOnly ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300'
+                }`}
+              >
+                {unattemptedOnly && <CheckCircle2 className="h-3 w-3" />}
+              </div>
+            </button>
           </div>
         </div>
 
-        {/* 3. Question Count & Launcher */}
-        <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-slate-100">
+        {/* 5. Question Count & Launcher */}
+        <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-100">
           <div className="flex items-center gap-3">
             <span className="text-xs font-bold text-slate-700">Question Count:</span>
             <div className="flex gap-1.5">
-              {[10, 15, 20, 30, 50].map((num) => (
+              {[5, 10, 15, 20, 30, 50].map((num) => (
                 <button
                   key={num}
                   type="button"
@@ -312,17 +447,17 @@ export default function PracticePage() {
 
           <button
             type="button"
-            disabled={loading || !selectedSubjectId}
-            onClick={() => startTest('subject_test', selectedSubjectId, questionCount)}
+            disabled={loading}
+            onClick={startCustomTest}
             className="flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-2.5 text-xs font-bold text-white hover:bg-brand-700 shadow disabled:opacity-50 transition-colors"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
-            LAUNCH TEST ({questionCount} MCQs) &rarr;
+            LAUNCH PRACTICE ({questionCount} MCQs) &rarr;
           </button>
         </div>
       </div>
 
-      {/* 🟣 New Feature: PYQ Patterns & Recall Intelligence Banner */}
+      {/* PYQ Patterns & Recall Intelligence Banner */}
       <div className="rounded-2xl border-2 border-purple-200 bg-purple-50/60 p-6 space-y-4 shadow-sm">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -331,7 +466,7 @@ export default function PracticePage() {
             </div>
             <div>
               <div className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-800 uppercase tracking-wider bg-purple-100 px-2 py-0.5 rounded-full mb-1">
-                New Module
+                High-Yield Module
               </div>
               <h3 className="text-base font-bold text-purple-950">NEET-PG PYQ Patterns & Recall Practice</h3>
               <p className="text-xs text-purple-800 mt-0.5">
@@ -355,22 +490,6 @@ export default function PracticePage() {
             </Link>
           </div>
         </div>
-      </div>
-
-      {/* 🔒 Official PYQ Integrity Notice */}
-      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-6 space-y-3">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-200 text-slate-600">
-            <Lock className="h-4 w-4" />
-          </div>
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Official Past Year Papers (PYQ)</h3>
-            <p className="text-[11px] text-slate-500">Temporarily Locked &bull; 0 Verified &bull; Strict Zero Invariant</p>
-          </div>
-        </div>
-        <p className="text-xs text-slate-600 leading-relaxed">
-          Revizo upholds strict medical accuracy standards. All 869 questions currently live are verified against standard medical textbooks (Harrison, Bailey & Love, Robbins, Park, etc.). We do not publish unverified memory recalls as official exam papers.
-        </p>
       </div>
     </div>
   );
