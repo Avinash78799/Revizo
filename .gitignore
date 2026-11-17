@@ -20,6 +20,7 @@ venv/
 *.db
 *.sqlite
 *.sqlite3
+*.backup*
 backups/
 
 # Environment Variables & Secrets

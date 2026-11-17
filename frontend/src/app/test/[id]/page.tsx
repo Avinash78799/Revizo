@@ -48,6 +48,8 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [questionTimes, setQuestionTimes] = useState<Record<string, number>>({});
   const [currentStartTime, setCurrentStartTime] = useState<number>(Date.now());
+  const [confidences, setConfidences] = useState<Record<string, string>>({});
+  const [paletteFilter, setPaletteFilter] = useState<'all' | 'answered' | 'unanswered' | 'marked'>('all');
 
   useEffect(() => {
     async function loadTestSession() {
@@ -101,7 +103,7 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
           body: JSON.stringify({
             question_id: currentQ.id,
             selected_option_key: key,
-            confidence: 'SOMEWHAT_CONFIDENT',
+            confidence: confidences[currentQ.id] || 'DEFINITELY_KNOW',
             time_spent_seconds: spent,
           }),
         });
@@ -183,7 +185,7 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
               body: JSON.stringify({
                 question_id: q.id,
                 selected_option_key: selected,
-                confidence: 'SOMEWHAT_CONFIDENT',
+                confidence: confidences[q.id] || 'DEFINITELY_KNOW',
                 time_spent_seconds: questionTimes[q.id] || 15,
               }),
             });
@@ -375,6 +377,40 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
           })}
         </div>
 
+        {/* Confidence Calibration Selector */}
+        {(!studyMode || !currentEval) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs">
+            <span className="font-bold text-slate-700 flex items-center gap-1.5">
+              <Shield className="h-4 w-4 text-brand-600" />
+              Confidence Self-Calibration:
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setConfidences((prev) => ({ ...prev, [currentQ.id]: 'DEFINITELY_KNOW' }))}
+                className={`rounded-lg px-3 py-1 text-xs font-bold transition-all ${
+                  (confidences[currentQ.id] || 'DEFINITELY_KNOW') === 'DEFINITELY_KNOW'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                High Confidence
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfidences((prev) => ({ ...prev, [currentQ.id]: 'GUESSED' }))}
+                className={`rounded-lg px-3 py-1 text-xs font-bold transition-all ${
+                  confidences[currentQ.id] === 'GUESSED'
+                    ? 'bg-amber-500 text-white shadow-xs'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Guess / 50:50
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Study Mode Instant Explanation View */}
         {studyMode && currentEval && (
           <div className="pt-4 border-t border-slate-100">
@@ -433,29 +469,116 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
 
       {/* NBE-Standard Interactive Question Palette */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-              NBE Question Status Palette
-            </h3>
-            <span className="text-[11px] text-slate-500">Click any number to jump directly</span>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                NBE Question Status Palette
+              </h3>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                NEET-PG 2024 Pattern
+              </span>
+            </div>
+            <span className="text-[11px] text-slate-500">Click any question number to navigate</span>
           </div>
 
-          {/* Palette Legend */}
-          <div className="flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-600">
-            <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded bg-emerald-500 inline-block" /> Answered
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded bg-rose-500 inline-block" /> Not Answered
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded bg-purple-500 inline-block" /> Marked for Review
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded bg-slate-200 inline-block" /> Not Visited
-            </span>
+          {/* Palette Filter Pills */}
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setPaletteFilter('all')}
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-all ${
+                paletteFilter === 'all'
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              All ({questions.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaletteFilter('answered')}
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-all ${
+                paletteFilter === 'answered'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+              }`}
+            >
+              Answered ({answeredCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaletteFilter('unanswered')}
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-all ${
+                paletteFilter === 'unanswered'
+                  ? 'bg-rose-600 text-white'
+                  : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+              }`}
+            >
+              Unanswered ({questions.length - answeredCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaletteFilter('marked')}
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-all ${
+                paletteFilter === 'marked'
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
+              }`}
+            >
+              Marked ({markedCount})
+            </button>
           </div>
+        </div>
+
+        {/* NBE Section Tabs (for tests with 20+ questions) */}
+        {questions.length >= 20 && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1">
+              Sections:
+            </span>
+            {Array.from({ length: Math.ceil(questions.length / (questions.length >= 40 ? 25 : 10)) }).map((_, sIdx) => {
+              const secSize = questions.length >= 40 ? 25 : 10;
+              const startQ = sIdx * secSize + 1;
+              const endQ = Math.min((sIdx + 1) * secSize, questions.length);
+              const isCurrentSec = currentIndex >= (startQ - 1) && currentIndex < endQ;
+              const secLetter = String.fromCharCode(65 + sIdx);
+
+              return (
+                <button
+                  key={sIdx}
+                  type="button"
+                  onClick={() => handleJumpToQuestion(startQ - 1)}
+                  className={`rounded-lg px-3 py-1 text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    isCurrentSec
+                      ? 'bg-brand-50 border-2 border-brand-500 text-brand-900 shadow-xs'
+                      : 'bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <span>Section {secLetter}</span>
+                  <span className="text-[10px] text-slate-400 font-normal">
+                    (Q{startQ}-{endQ})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Palette Legend */}
+        <div className="flex flex-wrap items-center gap-3 text-[10px] font-semibold text-slate-600">
+          <span className="flex items-center gap-1">
+            <span className="h-2.5 w-2.5 rounded bg-emerald-500 inline-block" /> Answered
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2.5 w-2.5 rounded bg-rose-500 inline-block" /> Not Answered
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2.5 w-2.5 rounded bg-purple-500 inline-block" /> Marked for Review
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2.5 w-2.5 rounded bg-slate-200 inline-block" /> Not Visited
+          </span>
         </div>
 
         <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
@@ -464,6 +587,11 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
             const isMrk = Boolean(markedForReview[q.id]);
             const isVis = Boolean(visitedQuestions[q.id]);
             const isCur = idx === currentIndex;
+
+            let matchesFilter = true;
+            if (paletteFilter === 'answered') matchesFilter = isAns;
+            else if (paletteFilter === 'unanswered') matchesFilter = !isAns;
+            else if (paletteFilter === 'marked') matchesFilter = isMrk;
 
             let numStyle = 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200';
             if (isCur) {
@@ -483,7 +611,9 @@ export default function TestRunnerPage({ params }: { params: { id: string } }) {
                 key={q.id}
                 type="button"
                 onClick={() => handleJumpToQuestion(idx)}
-                className={`flex h-9 w-full items-center justify-center rounded-lg border text-xs transition-all ${numStyle}`}
+                className={`flex h-9 w-full items-center justify-center rounded-lg border text-xs transition-all ${numStyle} ${
+                  !matchesFilter ? 'opacity-25 grayscale' : ''
+                }`}
               >
                 {idx + 1}
                 {isMrk && isAns && (
