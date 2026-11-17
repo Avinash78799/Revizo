@@ -197,6 +197,11 @@ export interface TestSeriesTemplate {
   id: string;
   title: string;
   mode: string;
+  series_category?: string;
+  test_type?: string;
+  badge?: string;
+  clinical_focus?: string;
+  target_audience?: string;
   question_count: number;
   time_limit_minutes: number;
   is_live: boolean;
@@ -205,13 +210,18 @@ export interface TestSeriesTemplate {
   syllabus_tag: string;
   total_registered: number;
   subject_id?: string;
+  subject_ids?: string[];
   subject_name?: string;
   subject_code?: string;
   difficulty?: string;
-  badge?: string;
 }
 
 export interface TestSeriesCatalog {
+  neet_pg_pro_series?: TestSeriesTemplate[];
+  medicine_prep_series?: TestSeriesTemplate[];
+  inicet_series?: TestSeriesTemplate[];
+  fmge_next_series?: TestSeriesTemplate[];
+  image_based_series?: TestSeriesTemplate[];
   live_grand_tests: TestSeriesTemplate[];
   subject_wise_tests: TestSeriesTemplate[];
   quick_drills: TestSeriesTemplate[];

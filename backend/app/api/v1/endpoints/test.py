@@ -46,7 +46,8 @@ async def get_test_series(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Returns available test series: Live Weekly Grand Tests, 19 Subject-Wise Tests, and Rapid Practice Drills.
+    Returns available test series across all specialized categories:
+    NEET-PG Pro, Medicine Prep, INI-CET, FMGE/NExT, Image-Based, Subject-Wise, and Rapid Drills.
     """
     stmt = select(TestTemplate).order_by(TestTemplate.created_at.desc())
     res = await db.execute(stmt)
@@ -57,16 +58,27 @@ async def get_test_series(
     subj_res = await db.execute(subj_stmt)
     all_subjects = subj_res.scalars().all()
 
+    neet_pg_pro_series = []
+    medicine_prep_series = []
+    inicet_series = []
+    fmge_next_series = []
+    image_based_series = []
     live_tests = []
     subject_tests = []
     quick_drills = []
 
     for t in templates:
         cfg = t.config or {}
+        series_cat = cfg.get("series_category")
         item = {
             "id": t.id,
             "title": t.title,
             "mode": t.mode,
+            "series_category": series_cat,
+            "test_type": cfg.get("test_type", "CLINICAL VIGNETTE"),
+            "badge": cfg.get("badge"),
+            "clinical_focus": cfg.get("clinical_focus"),
+            "target_audience": cfg.get("target_audience"),
             "question_count": cfg.get("question_count", 20),
             "time_limit_minutes": cfg.get("time_limit_minutes", 25),
             "is_live": cfg.get("is_live", False),
@@ -75,14 +87,33 @@ async def get_test_series(
             "syllabus_tag": cfg.get("syllabus_tag", "High-Yield Curriculum"),
             "total_registered": cfg.get("total_registered", 1840),
             "subject_id": cfg.get("subject_id"),
+            "subject_ids": cfg.get("subject_ids"),
+            "subject_name": cfg.get("subject_name"),
+            "subject_code": cfg.get("subject_code"),
             "difficulty": cfg.get("difficulty", "all")
         }
-        if t.mode in ("weekly_grand_test", "live_grand_test", "grand_test") or cfg.get("is_live"):
-            live_tests.append(item)
-        elif t.mode in ("subject_test", "subject"):
+
+        # Categorize by series
+        if series_cat == "neet_pg_pro":
+            neet_pg_pro_series.append(item)
+        elif series_cat == "medicine_prep":
+            medicine_prep_series.append(item)
+        elif series_cat == "inicet":
+            inicet_series.append(item)
+        elif series_cat == "fmge_next":
+            fmge_next_series.append(item)
+        elif series_cat == "image_based":
+            image_based_series.append(item)
+        elif series_cat == "subject_wise" or t.mode in ("subject_test", "subject"):
             subject_tests.append(item)
+        elif series_cat == "quick_drills" or t.mode in ("quick_drill", "rapid_recall"):
+            quick_drills.append(item)
         else:
             quick_drills.append(item)
+
+        # Retain backward-compatible live_grand_tests bucket
+        if item["is_live"] or series_cat == "neet_pg_pro" or t.mode in ("weekly_grand_test", "live_grand_test", "grand_test"):
+            live_tests.append(item)
 
     # If no subject templates exist yet in DB, dynamically generate them from subjects table
     if not subject_tests:
@@ -91,6 +122,9 @@ async def get_test_series(
                 "id": f"swt-{s.id}",
                 "title": f"{s.name} Subject Test",
                 "mode": "subject_test",
+                "series_category": "subject_wise",
+                "test_type": "SUBJECT MASTERY",
+                "badge": f"{s.code} CORE",
                 "subject_id": s.id,
                 "subject_name": s.name,
                 "subject_code": s.code,
@@ -103,6 +137,11 @@ async def get_test_series(
             })
 
     return {
+        "neet_pg_pro_series": neet_pg_pro_series,
+        "medicine_prep_series": medicine_prep_series,
+        "inicet_series": inicet_series,
+        "fmge_next_series": fmge_next_series,
+        "image_based_series": image_based_series,
         "live_grand_tests": live_tests,
         "subject_wise_tests": subject_tests,
         "quick_drills": quick_drills
@@ -158,21 +197,44 @@ async def start_test(
 ):
     rate_limiter.check_rate_limit(f"start_test:{current_user.id}", max_requests=20, window_seconds=60)
 
+    effective_mode = req.mode
     effective_count = req.get_effective_count()
+    effective_duration = req.duration_minutes
+    effective_subject_id = req.subject_id
+    effective_subject_ids = req.subject_ids
+    effective_difficulty = req.difficulty
+
+    # If launching from a test template, populate missing or default configuration from template
+    if req.template_id:
+        tmpl = await db.get(TestTemplate, req.template_id)
+        if tmpl:
+            cfg = tmpl.config or {}
+            if (not effective_mode or effective_mode == "quick_test") and tmpl.mode:
+                effective_mode = tmpl.mode
+            if (req.total_questions is None and req.question_count == 10) and cfg.get("question_count"):
+                effective_count = cfg.get("question_count")
+            if not effective_duration and cfg.get("time_limit_minutes"):
+                effective_duration = cfg.get("time_limit_minutes")
+            if not effective_subject_ids and cfg.get("subject_ids"):
+                effective_subject_ids = cfg.get("subject_ids")
+            if not effective_subject_id and cfg.get("subject_id"):
+                effective_subject_id = cfg.get("subject_id")
+            if (not effective_difficulty or effective_difficulty == "all") and cfg.get("difficulty"):
+                effective_difficulty = cfg.get("difficulty")
 
     test_session, loaded_questions = await TestService.create_test_session(
         db=db,
         user_id=current_user.id,
-        mode=req.mode,
-        subject_id=req.subject_id,
+        mode=effective_mode,
+        subject_id=effective_subject_id,
         chapter_id=req.chapter_id,
         topic_id=req.topic_id,
-        subject_ids=req.subject_ids,
-        difficulty=req.difficulty,
+        subject_ids=effective_subject_ids,
+        difficulty=effective_difficulty,
         unattempted_only=req.unattempted_only,
         is_high_yield_only=req.is_high_yield_only,
         template_id=req.template_id,
-        duration_minutes=req.duration_minutes,
+        duration_minutes=effective_duration,
         question_count=effective_count
     )
 
